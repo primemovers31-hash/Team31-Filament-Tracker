@@ -1,6 +1,7 @@
 const STORAGE_KEY = "filament-flow-state-v1";
 const LOCAL_COMMENTS_KEY = "filament-flow-comments-v1";
 const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
+const THEME_KEY = "filament-flow-theme-v1";
 
 const colorThemes = {
   "ruby red": ["#ff7d8c", "#8c1023"],
@@ -35,6 +36,19 @@ const printers = [
 ];
 
 function normalize(text) { return String(text || "").trim().toLowerCase(); }
+function normalizeSealStatus(value) {
+  const key = normalize(value);
+  if (key === "in a bag") return "in a bag";
+  if (key === "no") return "No";
+  if (key === "unopened") return "unopened";
+  return String(value || "").trim();
+}
+function locationBucketFor(location) {
+  const key = normalize(location);
+  if (!key) return "On shelf";
+  if (key.includes("printer") || key.includes("p1s") || key.includes("jenksrobotics")) return "In printer";
+  return "On shelf";
+}
 function getRequestedTagFromUrl() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -53,11 +67,30 @@ function syncSelectedTagToUrl(tag) {
 }
 function defaultThresholdFor(material) { const key = normalize(material); if (key === "tpu") return 0.5; if (key === "petg") return 0.3; return 0.3; }
 function colorFamilyFor(color) { const key = normalize(color); if (key.includes("black")) return "Black"; if (key.includes("white") || key.includes("silver") || key.includes("grey")) return "Neutral"; if (key.includes("red") || key.includes("maroon") || key.includes("ruby")) return "Red"; if (key.includes("blue") || key.includes("cyan")) return "Blue"; if (key.includes("green") || key.includes("glow")) return "Green"; if (key.includes("orange") || key.includes("tan")) return "Warm"; if (key.includes("rainbow") || key.includes("multi") || key.includes("candy")) return "Multi"; return "Other"; }
-function brandLogoFor(brand) { return normalize(brand).replace(/[^a-z0-9]/g, "").slice(0, 3).toUpperCase() || "FIL"; }
-function formatPercent(value) { return `${Math.round(Math.max(0, value) * 100)}% remaining`; }
+function brandLogoFor(brand) { return String(brand || "Generic").trim() || "Generic"; }
+function formatPercent(value) {
+  const amount = Math.max(0, Number(value) || 0);
+  if (amount < 0.3) return "low";
+  return `${Math.round(amount * 100)}% remaining`;
+}
 function formatAmountSummary(value) { return `${Number(value).toFixed(1)} spools`; }
 function parseSheetAmount(value) { const clean = normalize(value); if (!clean) return 0; if (clean === "low") return 0.2; const parsed = Number(clean); return Number.isFinite(parsed) ? parsed : 0; }
 function loadLocalReactions() { try { return JSON.parse(localStorage.getItem(LOCAL_REACTIONS_KEY) || "{}"); } catch { return {}; } }
+function loadThemePreference() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    return ["light", "dark", "team31"].includes(saved) ? saved : "light";
+  } catch {
+    return "light";
+  }
+}
+function applyTheme(theme) {
+  const nextTheme = ["light", "dark", "team31"].includes(theme) ? theme : "light";
+  document.documentElement.setAttribute("data-theme", nextTheme);
+  if (els.themeSelect) els.themeSelect.value = nextTheme;
+  try { localStorage.setItem(THEME_KEY, nextTheme); } catch {}
+  state.theme = nextTheme;
+}
 
 const state = {
   inventory: loadInventory(),
@@ -71,7 +104,8 @@ const state = {
   commentsLoading: false,
   dataSourceLabel: "Local inventory",
   currentPrinterId: "P1S-1",
-  reactions: loadLocalReactions()
+  reactions: loadLocalReactions(),
+  theme: loadThemePreference()
 };
 
 const els = {
@@ -86,6 +120,7 @@ const els = {
   searchInput: document.getElementById("search-input"),
   searchSuggestions: document.getElementById("search-suggestions"),
   printerGrid: document.getElementById("printer-grid"),
+  themeSelect: document.getElementById("theme-select"),
   featuredName: document.getElementById("featured-name"),
   featuredMeta: document.getElementById("featured-meta"),
   featuredAmount: document.getElementById("featured-amount"),
@@ -103,6 +138,8 @@ const els = {
   detailNotes: document.getElementById("detail-notes"),
   thresholdForm: document.getElementById("threshold-form"),
   thresholdInput: document.getElementById("threshold-input"),
+  sealForm: document.getElementById("seal-form"),
+  sealSelect: document.getElementById("seal-select"),
   likeButton: document.getElementById("like-button"),
   favoriteButton: document.getElementById("favorite-button"),
   likeCount: document.getElementById("like-count"),
@@ -130,7 +167,14 @@ const els = {
   commentForm: document.getElementById("comment-form"),
   commentName: document.getElementById("comment-name"),
   commentText: document.getElementById("comment-text"),
-  commentList: document.getElementById("comment-list")
+  commentList: document.getElementById("comment-list"),
+  locationForm: document.getElementById("location-form"),
+  locationSelect: document.getElementById("location-select"),
+  positionInput: document.getElementById("position-input"),
+  locationBucket: document.getElementById("location-bucket"),
+  moveToPrinter: document.getElementById("move-to-printer"),
+  moveToShelf: document.getElementById("move-to-shelf"),
+  newPosition: document.getElementById("new-position")
 };
 
 function parseCsvLine(line) {
@@ -172,14 +216,15 @@ function buildInventoryFromSheetCsv(csvText) {
     material: (row[typeIndex] || "Unknown").toUpperCase(),
     finish: row[specificsIndex] || "Unknown",
     brand: row[brandIndex] || "Unknown",
-    sealed: row[sealedIndex] || "Unknown",
+    sealed: normalizeSealStatus(row[sealedIndex] || "Unknown"),
     location: row[locationIndex] || "Unknown",
     amount: parseSheetAmount(row[amountIndex]),
     reorderThreshold: defaultThresholdFor(row[typeIndex] || "Unknown"),
     restock: row[reorderIndex] || "Unknown",
     notes: row[commentsIndex] || "",
     color: row[colorIndex] || "Unknown",
-    colorFamily: colorFamilyFor(row[colorIndex] || "Unknown")
+    colorFamily: colorFamilyFor(row[colorIndex] || "Unknown"),
+    position: ""
   }));
 }
 
@@ -192,10 +237,10 @@ function loadInventory() {
     return window.DEFAULT_INVENTORY.map((item) => {
       const match = parsed.find((savedItem) => savedItem.id === item.id);
       const merged = match ? { ...item, ...match } : { ...item };
-      return { ...merged, reorderThreshold: merged.reorderThreshold ?? defaultThresholdFor(merged.material), colorFamily: merged.colorFamily || colorFamilyFor(merged.color) };
+      return { ...merged, reorderThreshold: merged.reorderThreshold ?? defaultThresholdFor(merged.material), colorFamily: merged.colorFamily || colorFamilyFor(merged.color), position: merged.position || "" };
     });
   } catch {
-    return window.DEFAULT_INVENTORY.map((item) => ({ ...item, reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color) }));
+    return window.DEFAULT_INVENTORY.map((item) => ({ ...item, reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
   }
 }
 
@@ -224,14 +269,84 @@ async function loadInventoryFromGoogleSheet() {
   }
 }
 
+function amountForSheet(value) {
+  const amount = Math.max(0, Number(value) || 0);
+  if (amount < 0.3) return "low";
+  return `${Math.round(amount * 100)}%`;
+}
+
+function buildSheetPayload(item) {
+  return {
+    tag: item.id,
+    filamentType: item.material,
+    specifics: item.finish,
+    brand: item.brand,
+    sealed: normalizeSealStatus(item.sealed),
+    location: item.location,
+    amountRemaining: amountForSheet(item.amount),
+    orderAgain: item.restock || "Unknown",
+    comments: item.notes || "",
+    color: item.color
+  };
+}
+
+async function syncItemToGoogleSheet(item, mode = "upsert") {
+  if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
+  try {
+    const response = await fetch(config.googleSheetAppsScriptUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: mode,
+        secret: config.googleSheetSharedSecret || "",
+        sheetName: config.googleSheetName || "Sheet1",
+        item: buildSheetPayload(item)
+      })
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function isBelowThreshold(item) { return Number(item.amount) <= Number(item.reorderThreshold || defaultThresholdFor(item.material)); }
 function swatchFor(color) { const stops = colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; return `linear-gradient(135deg, ${stops.join(", ")})`; }
 function colorStopsFor(color) { return colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; }
-function nameStyleFor(color) { const key = normalize(color); const gradient = swatchFor(color); const needsContrast = ["white", "silver", "glow"].includes(key); const stroke = needsContrast ? "0.8px rgba(23,23,23,0.28)" : "0 transparent"; const shadow = needsContrast ? "0 1px 0 rgba(255,255,255,0.55)" : "none"; return `--name-gradient:${gradient};--name-stroke:${stroke};--name-shadow:${shadow};`; }
+function nameStyleFor(color) {
+  const key = normalize(color);
+  const gradient = swatchFor(color);
+  const darkTheme = state.theme === "dark";
+  const needsContrast = ["white", "silver", "glow"].includes(key) || darkTheme;
+  const stroke = darkTheme ? "1.2px rgba(0,0,0,0.72)" : needsContrast ? "0.8px rgba(23,23,23,0.28)" : "0 transparent";
+  const shadow = darkTheme ? "0 1px 0 rgba(255,255,255,0.08)" : needsContrast ? "0 1px 0 rgba(255,255,255,0.55)" : "none";
+  return `--name-gradient:${gradient};--name-stroke:${stroke};--name-shadow:${shadow};`;
+}
 function getAvailability(item) { if (isBelowThreshold(item)) return { label: "Below reorder threshold", tone: "low" }; if (item.amount >= 0.95) return { label: "Factory fresh", tone: "good" }; if (item.amount >= 0.5) return { label: "Ready for print", tone: "good" }; if (item.amount >= 0.25) return { label: "Watch inventory", tone: "warn" }; if (item.amount > 0) return { label: "Low stock", tone: "low" }; return { label: "Empty spool", tone: "low" }; }
 function getReactionCounts(id) { return state.reactions[id] || { likes: 0, favorites: 0 }; }
 function getMaterials() { return ["All", ...new Set(state.inventory.map((item) => item.material).sort())]; }
 function getLocations() { return ["All", ...new Set(state.inventory.map((item) => item.location).sort())]; }
+function getSealChoices() {
+  const preferred = ["in a bag", "No", "unopened"];
+  const all = [...preferred, ...state.inventory.map((item) => normalizeSealStatus(item.sealed)).filter(Boolean)];
+  const deduped = [];
+  const seen = new Set();
+  all.forEach((status) => {
+    const key = normalize(status);
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(status);
+    }
+  });
+  return deduped;
+}
+function getLocationChoices() {
+  return Array.from(new Set([
+    "Printer",
+    ...printers.map((printer) => printer.name),
+    ...state.inventory.map((item) => item.location).filter(Boolean)
+  ])).sort((a, b) => a.localeCompare(b));
+}
 function getFamilies() { return ["All", ...new Set(state.inventory.map((item) => item.colorFamily || colorFamilyFor(item.color)).sort())]; }
 function getModes() { return ["All", "Low stock", "Ready to print", "Favorites", "Most liked"]; }
 
@@ -303,10 +418,7 @@ function getSelectedItem(filteredInventory) {
 
 function renderStatStrip() {
   const total = state.inventory.length;
-  const ready = state.inventory.filter((item) => item.amount >= 0.8).length;
-  const lowStock = state.inventory.filter((item) => isBelowThreshold(item)).length;
-  const favorites = Object.values(state.reactions).reduce((sum, value) => sum + (value.favorites || 0), 0);
-  els.statStrip.innerHTML = `<article class="stat-card"><span>Total spools</span><strong>${total}</strong></article><article class="stat-card"><span>Ready to run</span><strong>${ready}</strong></article><article class="stat-card"><span>Low / favorites</span><strong>${lowStock} / ${favorites}</strong></article>`;
+  els.statStrip.innerHTML = `<article class="stat-card"><span>Total spools</span><strong>${total}</strong></article>`;
 }
 
 function renderFilters() {
@@ -334,7 +446,7 @@ function renderInventoryGrid(items) {
   els.inventoryGrid.innerHTML = items.map((item) => {
     const availability = getAvailability(item);
     const reaction = getReactionCounts(item.id);
-    return `<article class="inventory-card ${item.id === state.selectedId ? "active" : ""}" data-id="${item.id}"><div class="card-topline"><div class="card-brandline"><span class="card-id">Tag ${item.id}</span><span class="brand-logo">${brandLogoFor(item.brand)}</span></div><div class="color-badge" style="background:${swatchFor(item.color)}"></div></div><div class="card-visual">${spoolSvg(item.color, `${item.color} ${item.material} spool`, `card-${item.id}`)}</div><div><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color}</h3><p class="inventory-subline">${item.material} / ${item.finish} / ${item.brand}</p></div><div class="card-tags"><span class="badge">${item.location}</span><span class="badge">${item.colorFamily}</span><span class="badge">${item.sealed}</span>${reaction.favorites > 0 ? `<span class="badge favorite">Favorite ${reaction.favorites}</span>` : ""}${reaction.likes > 0 ? `<span class="badge">Heart ${reaction.likes}</span>` : ""}${isBelowThreshold(item) ? `<span class="chip low">Reorder at ${Number(item.reorderThreshold).toFixed(1)}</span>` : ""}<span class="chip ${availability.tone}">${availability.label}</span></div><div class="card-footer"><strong class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></strong><button class="card-action" type="button" data-open-id="${item.id}">View</button></div></article>`;
+    return `<article class="inventory-card ${item.id === state.selectedId ? "active" : ""}" data-id="${item.id}"><div class="card-topline"><div class="card-brandline"><span class="card-id">Tag ${item.id}</span><span class="brand-logo">${brandLogoFor(item.brand)}</span></div><div class="color-badge" style="background:${swatchFor(item.color)}"></div></div><div class="card-visual">${spoolSvg(item.color, `${item.color} ${item.material} spool`, `card-${item.id}`)}</div><div><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color}</h3><p class="inventory-subline">${item.material} / ${item.finish} / ${item.brand}</p></div><div class="card-tags"><span class="badge">${item.location}</span><span class="badge">${locationBucketFor(item.location)}</span>${item.position ? `<span class="badge">${item.position}</span>` : ""}<span class="badge">${item.colorFamily}</span><span class="badge">${item.sealed}</span>${reaction.favorites > 0 ? `<span class="badge favorite">Favorite ${reaction.favorites}</span>` : ""}${reaction.likes > 0 ? `<span class="badge">Heart ${reaction.likes}</span>` : ""}${isBelowThreshold(item) ? `<span class="chip low">Reorder at ${Number(item.reorderThreshold).toFixed(1)}</span>` : ""}<span class="chip ${availability.tone}">${availability.label}</span></div><div class="card-footer"><strong class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></strong><button class="card-action" type="button" data-open-id="${item.id}">View</button></div></article>`;
   }).join("") + `<button class="inventory-card add-card" type="button" data-open-add-filament="true"><div class="plus-icon">+</div><div><h3>Add filament</h3><p class="inventory-subline">Create a new spool entry right from the catalog.</p></div></button>`;
 }
 
@@ -397,7 +509,10 @@ function openAddFilamentModal() {
   els.newAmount.value = "1.0";
   els.newThreshold.value = "0.3";
   els.newLocation.value = "";
-  els.newSealed.value = "Unopened";
+  els.newPosition.value = "";
+  if (els.newSealed) {
+    els.newSealed.innerHTML = getSealChoices().map((status) => `<option value="${status}" ${normalize(status) === "unopened" ? "selected" : ""}>${status}</option>`).join("");
+  }
   els.newRestock.value = "Unknown";
   els.newNotes.value = "";
   els.addFilamentModal.showModal();
@@ -418,7 +533,8 @@ function createFilamentFromForm() {
     amount: Number(els.newAmount.value || 0),
     reorderThreshold: Number(els.newThreshold.value || defaultThresholdFor(material)),
     location: els.newLocation.value.trim() || "Unknown",
-    sealed: els.newSealed.value.trim() || "Unknown",
+    position: els.newPosition.value.trim(),
+    sealed: normalizeSealStatus(els.newSealed.value.trim() || "Unknown"),
     restock: els.newRestock.value.trim() || "Unknown",
     notes: els.newNotes.value.trim(),
     colorFamily: colorFamilyFor(els.newColor.value)
@@ -441,6 +557,10 @@ function renderDetails(item) {
     els.likeCount.textContent = "0";
     els.favoriteCount.textContent = "0";
     els.amazonLink.href = "https://www.amazon.com/";
+    if (els.locationSelect) els.locationSelect.innerHTML = "";
+    if (els.positionInput) els.positionInput.value = "";
+    if (els.sealSelect) els.sealSelect.innerHTML = "";
+    if (els.locationBucket) els.locationBucket.textContent = "On shelf";
     renderComments();
     return;
   }
@@ -456,6 +576,18 @@ function renderDetails(item) {
   els.detailProgress.style.background = swatchFor(item.color);
   els.detailStatus.textContent = `${availability.label} / stored at ${item.location} / restock: ${item.restock}`;
   els.detailSwatch.innerHTML = spoolSvg(item.color, `${item.color} ${item.material} spool`, `detail-${item.id}`);
+  if (els.locationSelect) {
+    els.locationSelect.innerHTML = getLocationChoices().map((location) => `<option value="${location}" ${location === item.location ? "selected" : ""}>${location}</option>`).join("");
+  }
+  if (els.sealSelect) {
+    els.sealSelect.innerHTML = getSealChoices().map((status) => `<option value="${status}" ${status === item.sealed ? "selected" : ""}>${status}</option>`).join("");
+  }
+  if (els.positionInput) {
+    els.positionInput.value = item.position || "";
+  }
+  if (els.locationBucket) {
+    els.locationBucket.textContent = locationBucketFor(item.location);
+  }
   els.detailList.innerHTML = [
     ["Material", item.material],
     ["Finish", item.finish],
@@ -463,6 +595,8 @@ function renderDetails(item) {
     ["Color", item.color],
     ["Color family", item.colorFamily || colorFamilyFor(item.color)],
     ["Storage", item.location],
+    ["Position", item.position || "Not set"],
+    ["Placement", locationBucketFor(item.location)],
     ["Seal status", item.sealed],
     ["Order again", item.restock],
     ["Spool tag", item.id],
@@ -481,6 +615,26 @@ function adjustSelectedAmount(delta) {
   if (!item) return;
   item.amount = Math.max(0, Math.round((Number(item.amount) + delta) * 10) / 10);
   saveInventory();
+  void syncItemToGoogleSheet(item, "upsert");
+  renderAll();
+}
+
+function updateSelectedPlacement(nextLocation, nextPosition) {
+  const item = state.inventory.find((entry) => entry.id === state.selectedId);
+  if (!item) return;
+  if (nextLocation) item.location = nextLocation;
+  item.position = String(nextPosition || "").trim();
+  saveInventory();
+  void syncItemToGoogleSheet(item, "upsert");
+  renderAll();
+}
+
+function updateSelectedSeal(nextSeal) {
+  const item = state.inventory.find((entry) => entry.id === state.selectedId);
+  if (!item || !nextSeal) return;
+  item.sealed = nextSeal;
+  saveInventory();
+  void syncItemToGoogleSheet(item, "upsert");
   renderAll();
 }
 
@@ -538,6 +692,11 @@ function bindStaticEvents() {
 
   els.searchInput?.addEventListener("input", (event) => {
     state.search = normalize(event.target.value);
+    renderAll();
+  });
+
+  els.themeSelect?.addEventListener("change", (event) => {
+    applyTheme(event.target.value);
     renderAll();
   });
 
@@ -611,6 +770,11 @@ function bindStaticEvents() {
     renderAll();
   });
 
+  els.sealForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    updateSelectedSeal(els.sealSelect?.value);
+  });
+
   els.likeButton?.addEventListener("click", () => {
     if (!state.selectedId) return;
     const current = getReactionCounts(state.selectedId);
@@ -627,6 +791,24 @@ function bindStaticEvents() {
     renderAll();
   });
 
+  els.locationForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    updateSelectedPlacement(els.locationSelect?.value, els.positionInput?.value);
+  });
+
+  els.moveToPrinter?.addEventListener("click", () => {
+    const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
+    const printerName = printer?.name || "Printer";
+    updateSelectedPlacement(printerName, "Loaded on printer");
+  });
+
+  els.moveToShelf?.addEventListener("click", () => {
+    const item = state.inventory.find((entry) => entry.id === state.selectedId);
+    if (!item) return;
+    const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location);
+    updateSelectedPlacement(shelfChoice || "Cabinet 1 Misc.", "");
+  });
+
   els.addFilamentButton?.addEventListener("click", openAddFilamentModal);
   els.closeAddFilament?.addEventListener("click", closeAddFilamentModal);
 
@@ -638,6 +820,7 @@ function bindStaticEvents() {
       .sort((a, b) => Number(b.id) - Number(a.id) || b.id.localeCompare(a.id));
     state.selectedId = newItem.id;
     saveInventory();
+    void syncItemToGoogleSheet(newItem, "upsert");
     closeAddFilamentModal();
     renderAll();
   });
@@ -654,6 +837,7 @@ function bindStaticEvents() {
 }
 
 async function initializeApp() {
+  applyTheme(state.theme);
   await loadInventoryFromGoogleSheet();
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {

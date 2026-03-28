@@ -12,19 +12,33 @@
     <header class="hero">
       <nav class="topbar">
         <div class="topbar-brand">
+          <img class="team-logo" src="team31-logo.png" alt="Team 31 logo">
           <div>
           <p class="eyebrow">FRC Team 31 Workshop Inventory</p>
           <h1>Prime Movers Filament Tracker</h1>
           </div>
         </div>
-        <button class="ghost-button" id="reset-button" type="button">Reset Saved Changes</button>
+        <div class="topbar-actions">
+          <label class="theme-picker" for="theme-select">
+            <span>Theme</span>
+            <select id="theme-select">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="team31">Team 31</option>
+            </select>
+          </label>
+          <button class="ghost-button" id="reset-button" type="button">Reset Saved Changes</button>
+        </div>
       </nav>
       <div class="hero-links">
         <a class="ghost-button action-link" id="spreadsheet-link" href="#" target="_blank" rel="noreferrer">Open Spreadsheet</a>
       </div>
       <div class="hero-grid">
         <section class="hero-copy">
-          <p class="hero-kicker">Jenks Prime Movers 31</p>
+          <div class="hero-teamline">
+            <img class="team-logo hero-logo" src="team31-logo.png" alt="Team 31 logo">
+            <p class="hero-kicker">Jenks Prime Movers 31</p>
+          </div>
           <h2>Pick a spool, tap into the details, and adjust inventory in clean 10% steps.</h2>
           <p class="hero-text">Team 31's filament inventory is now a clean product-style catalog. Browse by material, color, brand, or storage location so the shop can find the right spool fast and keep printing organized.</p>
           <div class="search-panel">
@@ -37,6 +51,7 @@
           </div>
         </section>
         <section class="featured-card" id="featured-card">
+          <img class="team-logo featured-logo" src="team31-logo.png" alt="Team 31 logo">
           <p class="featured-label">Spotlight spool</p>
           <div class="featured-art" id="featured-swatch"></div>
           <div>
@@ -57,26 +72,35 @@
       <section class="catalog-panel">
         <div class="bambu-panel">
           <div class="section-heading">
-            <div>
+            <div class="section-heading-brand">
+              <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+              <div>
               <p class="eyebrow">Bambu companion</p>
               <h2>P1S printer status</h2>
+              </div>
             </div>
           </div>
           <div class="printer-grid" id="printer-grid"></div>
         </div>
         <div class="match-panel">
           <div class="section-heading">
-            <div>
+            <div class="section-heading-brand">
+              <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+              <div>
               <p class="eyebrow">Printer picks</p>
               <h2>Best matches for current printer</h2>
+              </div>
             </div>
           </div>
           <div class="match-grid" id="match-grid"></div>
         </div>
         <div class="section-heading">
-          <div>
+          <div class="section-heading-brand">
+            <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+            <div>
             <p class="eyebrow">Team 31 inventory</p>
             <h2>Filament catalog</h2>
+            </div>
           </div>
           <div class="catalog-actions">
             <p id="results-copy"></p>
@@ -128,6 +152,30 @@
         <section class="printer-assignment-card">
           <div class="comments-head">
             <div>
+              <p class="mini-label">Location manager</p>
+              <h3>Move this spool</h3>
+            </div>
+            <p class="comments-status" id="location-bucket">On shelf</p>
+          </div>
+          <div class="location-quick-actions">
+            <button class="filter-pill" id="move-to-printer" type="button">Move to printer</button>
+            <button class="filter-pill" id="move-to-shelf" type="button">Move to shelf</button>
+          </div>
+          <form class="comment-form" id="location-form">
+            <label>
+              <span>Exact location</span>
+              <select id="location-select"></select>
+            </label>
+            <label>
+              <span>Position</span>
+              <input id="position-input" type="text" maxlength="60" placeholder="Shelf A3, AMS A1, top row...">
+            </label>
+            <button class="primary-button" type="submit">Save location</button>
+          </form>
+        </section>
+        <section class="printer-assignment-card">
+          <div class="comments-head">
+            <div>
               <p class="mini-label">Reorder settings</p>
               <h3>Threshold and reactions</h3>
             </div>
@@ -143,6 +191,21 @@
             <button class="reaction-button" id="like-button" type="button">Heart <span id="like-count">0</span></button>
             <button class="reaction-button" id="favorite-button" type="button">Favorite <span id="favorite-count">0</span></button>
           </div>
+        </section>
+        <section class="printer-assignment-card">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Seal status</p>
+              <h3>Bag or open status</h3>
+            </div>
+          </div>
+          <form class="comment-form" id="seal-form">
+            <label>
+              <span>Spreadsheet seal value</span>
+              <select id="seal-select"></select>
+            </label>
+            <button class="primary-button" type="submit">Save seal status</button>
+          </form>
         </section>
         <section class="comments-card">
           <div class="comments-head">
@@ -193,7 +256,8 @@
         <label><span>Amount</span><input id="new-amount" type="number" min="0" max="5" step="0.1" required value="1.0"></label>
         <label><span>Reorder threshold</span><input id="new-threshold" type="number" min="0" max="5" step="0.1" value="0.3"></label>
         <label><span>Storage</span><input id="new-location" type="text" required placeholder="Cabinet 2 PLA"></label>
-        <label><span>Seal status</span><input id="new-sealed" type="text" required placeholder="Unopened"></label>
+        <label><span>Position</span><input id="new-position" type="text" placeholder="Shelf A3"></label>
+        <label><span>Seal status</span><select id="new-sealed"></select></label>
         <label><span>Order again</span><input id="new-restock" type="text" placeholder="Unknown"></label>
         <label class="full-span"><span>Notes</span><textarea id="new-notes" rows="4" placeholder="Optional notes..."></textarea></label>
       </div>
