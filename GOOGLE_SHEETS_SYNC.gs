@@ -1,3 +1,33 @@
+function doGet(e) {
+  try {
+    var params = e && e.parameter ? e.parameter : {};
+    var action = params.action || "read";
+    if (action !== "read") return jsonResponse({ ok: false, error: "Unsupported action" });
+
+    var sheetName = params.sheetName || "Sheet1";
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return jsonResponse({ ok: false, error: "Sheet not found" });
+
+    var values = sheet.getDataRange().getDisplayValues();
+    if (!values.length) return jsonResponse({ ok: true, rows: [] });
+
+    var headers = values[0];
+    var rows = [];
+    for (var r = 1; r < values.length; r++) {
+      var row = {};
+      for (var c = 0; c < headers.length; c++) {
+        row[headers[c]] = values[r][c];
+      }
+      rows.push(row);
+    }
+
+    return jsonResponse({ ok: true, rows: rows });
+  } catch (error) {
+    return jsonResponse({ ok: false, error: String(error) });
+  }
+}
+
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents || "{}");

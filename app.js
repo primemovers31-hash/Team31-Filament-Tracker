@@ -241,6 +241,29 @@ function buildInventoryFromSheetCsv(csvText) {
   });
 }
 
+function buildInventoryFromSheetRows(rows) {
+  const seenTags = new Set();
+  return rows.map((row) => ({
+    id: normalizeTag(row.tag || row["Asset tag"] || ""),
+    material: String(row.filamentType || row["Filament type"] || "Unknown").toUpperCase(),
+    finish: row.specifics || row["Specifics (if neccessary)"] || "Unknown",
+    brand: row.brand || row.Brand || "Unknown",
+    sealed: normalizeSealStatus(row.sealed || row.Sealed || "Unknown"),
+    location: row.location || row.Location || "Unknown",
+    amount: parseSheetAmount(row.amountRemaining || row["Amount remaining (approximate)"] || 0),
+    reorderThreshold: defaultThresholdFor(row.filamentType || row["Filament type"] || "Unknown"),
+    restock: row.orderAgain || row["Order again"] || "Unknown",
+    notes: row.comments || row.Comments || "",
+    color: row.color || row.Color || "Unknown",
+    colorFamily: colorFamilyFor(row.color || row.Color || "Unknown"),
+    position: ""
+  })).filter((item) => {
+    if (!item.id || seenTags.has(item.id)) return false;
+    seenTags.add(item.id);
+    return true;
+  });
+}
+
 function loadInventory() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -264,8 +287,28 @@ function saveLocalComments(comments) { try { localStorage.setItem(LOCAL_COMMENTS
 function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, JSON.stringify(state.reactions)); } catch {} }
 
 async function loadInventoryFromGoogleSheet() {
-  if (!config.googleSheetCsvUrl) return false;
+  if (!config.googleSheetCsvUrl && !config.googleSheetAppsScriptUrl) return false;
   try {
+    if (config.googleSheetAppsScriptUrl) {
+      const readUrl = new URL(config.googleSheetAppsScriptUrl);
+      readUrl.searchParams.set("action", "read");
+      readUrl.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
+      readUrl.searchParams.set("_ts", String(Date.now()));
+      const scriptResponse = await fetch(readUrl.toString(), { cache: "no-store" });
+      if (scriptResponse.ok) {
+        const scriptData = await scriptResponse.json();
+        if (scriptData?.ok && Array.isArray(scriptData.rows) && scriptData.rows.length) {
+          const sheetInventory = buildInventoryFromSheetRows(scriptData.rows);
+          const saved = loadInventory();
+          state.inventory = sheetInventory.map((item) => {
+            const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
+            return match ? { ...item, reorderThreshold: match.reorderThreshold ?? item.reorderThreshold } : item;
+          });
+          state.dataSourceLabel = "Google Sheet live";
+          return true;
+        }
+      }
+    }
     const sheetUrl = new URL(config.googleSheetCsvUrl);
     sheetUrl.searchParams.set("_ts", String(Date.now()));
     const response = await fetch(sheetUrl.toString(), { cache: "no-store" });
