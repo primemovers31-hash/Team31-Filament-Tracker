@@ -352,17 +352,15 @@ function buildSheetPayload(item) {
 async function syncItemToGoogleSheet(item, mode = "upsert") {
   if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
   try {
-    const response = await fetch(config.googleSheetAppsScriptUrl, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: mode,
-        secret: config.googleSheetSharedSecret || "",
-        sheetName: config.googleSheetName || "Sheet1",
-        item: buildSheetPayload(item)
-      })
+    const url = new URL(config.googleSheetAppsScriptUrl);
+    const payload = buildSheetPayload(item);
+    url.searchParams.set("action", mode);
+    url.searchParams.set("secret", config.googleSheetSharedSecret || "");
+    url.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
+    Object.entries(payload).forEach(([key, value]) => {
+      url.searchParams.set(key, String(value ?? ""));
     });
+    const response = await fetch(url.toString(), { cache: "no-store" });
     return response.ok;
   } catch {
     return false;
@@ -910,11 +908,6 @@ async function initializeApp() {
     if (loaded && previousSelected) state.selectedId = previousSelected;
     if (loaded) renderAll();
   }, 5000);
-  window.setInterval(() => {
-    if (document.visibilityState === "visible") {
-      window.location.reload();
-    }
-  }, 30000);
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     const previousSelected = state.selectedId;

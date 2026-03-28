@@ -2,27 +2,48 @@ function doGet(e) {
   try {
     var params = e && e.parameter ? e.parameter : {};
     var action = params.action || "read";
-    if (action !== "read") return jsonResponse({ ok: false, error: "Unsupported action" });
+    if (action === "read") {
+      var sheetName = params.sheetName || "Sheet1";
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return jsonResponse({ ok: false, error: "Sheet not found" });
 
-    var sheetName = params.sheetName || "Sheet1";
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) return jsonResponse({ ok: false, error: "Sheet not found" });
+      var values = sheet.getDataRange().getDisplayValues();
+      if (!values.length) return jsonResponse({ ok: true, rows: [] });
 
-    var values = sheet.getDataRange().getDisplayValues();
-    if (!values.length) return jsonResponse({ ok: true, rows: [] });
-
-    var headers = values[0];
-    var rows = [];
-    for (var r = 1; r < values.length; r++) {
-      var row = {};
-      for (var c = 0; c < headers.length; c++) {
-        row[headers[c]] = values[r][c];
+      var headers = values[0];
+      var rows = [];
+      for (var r = 1; r < values.length; r++) {
+        var row = {};
+        for (var c = 0; c < headers.length; c++) {
+          row[headers[c]] = values[r][c];
+        }
+        rows.push(row);
       }
-      rows.push(row);
+
+      return jsonResponse({ ok: true, rows: rows });
     }
 
-    return jsonResponse({ ok: true, rows: rows });
+    if (action === "upsert") {
+      return handleUpsert({
+        secret: params.secret || "",
+        sheetName: params.sheetName || "Sheet1",
+        item: {
+          tag: params.tag || "",
+          filamentType: params.filamentType || "",
+          specifics: params.specifics || "",
+          brand: params.brand || "",
+          sealed: params.sealed || "",
+          location: params.location || "",
+          amountRemaining: params.amountRemaining || "",
+          orderAgain: params.orderAgain || "",
+          comments: params.comments || "",
+          color: params.color || ""
+        }
+      });
+    }
+
+    return jsonResponse({ ok: false, error: "Unsupported action" });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error) });
   }
@@ -31,6 +52,14 @@ function doGet(e) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents || "{}");
+    return handleUpsert(data);
+  } catch (error) {
+    return jsonResponse({ ok: false, error: String(error) });
+  }
+}
+
+function handleUpsert(data) {
+  try {
     var secret = PropertiesService.getScriptProperties().getProperty("SHARED_SECRET") || "";
     if (secret && data.secret !== secret) {
       return jsonResponse({ ok: false, error: "Unauthorized" });
