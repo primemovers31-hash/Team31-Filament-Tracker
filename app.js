@@ -910,6 +910,11 @@ async function initializeApp() {
     if (loaded && previousSelected) state.selectedId = previousSelected;
     if (loaded) renderAll();
   }, 5000);
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+      window.location.reload();
+    }
+  }, 30000);
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     const previousSelected = state.selectedId;
