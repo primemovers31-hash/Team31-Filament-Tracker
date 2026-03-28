@@ -9,7 +9,7 @@ function doPost(e) {
     var sheetName = data.sheetName || "Sheet1";
     var action = data.action || "upsert";
     var item = data.item || {};
-    var tag = String(item.tag || "").trim();
+    var tag = normalizeTag(item.tag || "");
     if (!tag) return jsonResponse({ ok: false, error: "Missing tag" });
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -87,9 +87,9 @@ function buildColumnMap(headers) {
 
 function findRowIndex(values, tagColumn, tag) {
   if (!tagColumn) return -1;
-  var wanted = String(tag).trim();
+  var wanted = normalizeTag(tag);
   for (var row = 1; row < values.length; row++) {
-    if (String(values[row][tagColumn - 1] || "").trim() === wanted) return row + 1;
+    if (normalizeTag(values[row][tagColumn - 1] || "") === wanted) return row + 1;
   }
   return -1;
 }
@@ -98,4 +98,12 @@ function setIfPresent(sheet, rowIndex, columnIndex, value) {
   if (!columnIndex) return;
   if (typeof value === "undefined") return;
   sheet.getRange(rowIndex, columnIndex).setValue(value);
+}
+
+function normalizeTag(value) {
+  var raw = String(value || "").trim();
+  if (!raw) return "";
+  var numeric = Number(raw);
+  if (!isFinite(numeric)) return raw;
+  return String(numeric);
 }

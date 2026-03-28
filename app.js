@@ -36,6 +36,13 @@ const printers = [
 ];
 
 function normalize(text) { return String(text || "").trim().toLowerCase(); }
+function normalizeTag(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return raw;
+  return Number.isInteger(numeric) ? String(numeric) : String(numeric);
+}
 function normalizeSealStatus(value) {
   const key = normalize(value);
   if (key === "in a bag") return "in a bag";
@@ -212,8 +219,9 @@ function buildInventoryFromSheetCsv(csvText) {
   const reorderIndex = indexOfAny(["Order again"], 7);
   const commentsIndex = indexOfAny(["Comments"], 8);
   const colorIndex = indexOfAny(["Color"], 9);
+  const seenTags = new Set();
   return lines.slice(1).map((line) => parseCsvLine(line)).filter((row) => row[tagIndex]).map((row) => ({
-    id: row[tagIndex] || "",
+    id: normalizeTag(row[tagIndex] || ""),
     material: (row[typeIndex] || "Unknown").toUpperCase(),
     finish: row[specificsIndex] || "Unknown",
     brand: row[brandIndex] || "Unknown",
@@ -226,7 +234,11 @@ function buildInventoryFromSheetCsv(csvText) {
     color: row[colorIndex] || "Unknown",
     colorFamily: colorFamilyFor(row[colorIndex] || "Unknown"),
     position: ""
-  }));
+  })).filter((item) => {
+    if (!item.id || seenTags.has(item.id)) return false;
+    seenTags.add(item.id);
+    return true;
+  });
 }
 
 function loadInventory() {
@@ -236,12 +248,13 @@ function loadInventory() {
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed)) throw new Error("bad saved");
     return window.DEFAULT_INVENTORY.map((item) => {
-      const match = parsed.find((savedItem) => savedItem.id === item.id);
-      const merged = match ? { ...item, ...match } : { ...item };
+      const normalizedId = normalizeTag(item.id);
+      const match = parsed.find((savedItem) => normalizeTag(savedItem.id) === normalizedId);
+      const merged = match ? { ...item, ...match, id: normalizedId } : { ...item, id: normalizedId };
       return { ...merged, reorderThreshold: merged.reorderThreshold ?? defaultThresholdFor(merged.material), colorFamily: merged.colorFamily || colorFamilyFor(merged.color), position: merged.position || "" };
     });
   } catch {
-    return window.DEFAULT_INVENTORY.map((item) => ({ ...item, reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
+    return window.DEFAULT_INVENTORY.map((item) => ({ ...item, id: normalizeTag(item.id), reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
   }
 }
 
@@ -280,7 +293,7 @@ function amountForSheet(value) {
 
 function buildSheetPayload(item) {
   return {
-    tag: item.id,
+        tag: normalizeTag(item.id),
     filamentType: item.material,
     specifics: item.finish,
     brand: item.brand,
