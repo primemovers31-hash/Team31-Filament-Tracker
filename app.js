@@ -866,7 +866,7 @@ async function initializeApp() {
     const loaded = await loadInventoryFromGoogleSheet();
     if (loaded && previousSelected) state.selectedId = previousSelected;
     if (loaded) renderAll();
-  }, 60000);
+  }, 5000);
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     const previousSelected = state.selectedId;
