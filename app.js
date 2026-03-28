@@ -74,7 +74,8 @@ function formatPercent(value) {
   return `${Math.round(amount * 100)}% remaining`;
 }
 function formatAmountSummary(value) { return `${Number(value).toFixed(1)} spools`; }
-function parseSheetAmount(value) { const clean = normalize(value); if (!clean) return 0; if (clean === "low") return 0.2; const parsed = Number(clean); return Number.isFinite(parsed) ? parsed : 0; }
+function clampAmount(value) { return Math.min(1, Math.max(0, Number(value) || 0)); }
+function parseSheetAmount(value) { const clean = normalize(value); if (!clean) return 0; if (clean === "low") return 0.2; if (clean.endsWith("%")) return clampAmount(Number(clean.replace("%", "")) / 100); const parsed = Number(clean); return Number.isFinite(parsed) ? clampAmount(parsed) : 0; }
 function loadLocalReactions() { try { return JSON.parse(localStorage.getItem(LOCAL_REACTIONS_KEY) || "{}"); } catch { return {}; } }
 function loadThemePreference() {
   try {
@@ -252,7 +253,9 @@ function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, 
 async function loadInventoryFromGoogleSheet() {
   if (!config.googleSheetCsvUrl) return false;
   try {
-    const response = await fetch(config.googleSheetCsvUrl, { cache: "no-store" });
+    const sheetUrl = new URL(config.googleSheetCsvUrl);
+    sheetUrl.searchParams.set("_ts", String(Date.now()));
+    const response = await fetch(sheetUrl.toString(), { cache: "no-store" });
     if (!response.ok) return false;
     const csvText = await response.text();
     const sheetInventory = buildInventoryFromSheetCsv(csvText);
@@ -270,7 +273,7 @@ async function loadInventoryFromGoogleSheet() {
 }
 
 function amountForSheet(value) {
-  const amount = Math.max(0, Number(value) || 0);
+  const amount = clampAmount(value);
   if (amount < 0.3) return "low";
   return `${Math.round(amount * 100)}%`;
 }
@@ -530,7 +533,7 @@ function createFilamentFromForm() {
     finish: els.newFinish.value.trim() || "Unknown",
     brand: els.newBrand.value.trim() || "Generic",
     color: els.newColor.value.trim() || "Unknown",
-    amount: Number(els.newAmount.value || 0),
+    amount: clampAmount(els.newAmount.value || 0),
     reorderThreshold: Number(els.newThreshold.value || defaultThresholdFor(material)),
     location: els.newLocation.value.trim() || "Unknown",
     position: els.newPosition.value.trim(),
@@ -613,7 +616,7 @@ function renderDetails(item) {
 function adjustSelectedAmount(delta) {
   const item = state.inventory.find((entry) => entry.id === state.selectedId);
   if (!item) return;
-  item.amount = Math.max(0, Math.round((Number(item.amount) + delta) * 10) / 10);
+  item.amount = clampAmount(Math.round((Number(item.amount) + delta) * 10) / 10);
   saveInventory();
   void syncItemToGoogleSheet(item, "upsert");
   renderAll();
@@ -851,6 +854,13 @@ async function initializeApp() {
     if (loaded && previousSelected) state.selectedId = previousSelected;
     if (loaded) renderAll();
   }, 60000);
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    const previousSelected = state.selectedId;
+    const loaded = await loadInventoryFromGoogleSheet();
+    if (loaded && previousSelected) state.selectedId = previousSelected;
+    if (loaded) renderAll();
+  });
 }
 
 initializeApp();
