@@ -444,7 +444,14 @@ async function syncItemToGoogleSheet(item, mode = "upsert") {
       url.searchParams.set(key, String(value ?? ""));
     });
     const response = await fetch(url.toString(), { cache: "no-store" });
-    return response.ok;
+    if (!response.ok) return false;
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      return false;
+    }
+    return Boolean(payload?.ok);
   } catch {
     return false;
   }
