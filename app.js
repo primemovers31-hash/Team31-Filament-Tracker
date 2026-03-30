@@ -2,6 +2,9 @@ const STORAGE_KEY = "filament-flow-state-v1";
 const LOCAL_COMMENTS_KEY = "filament-flow-comments-v1";
 const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
 const THEME_KEY = "filament-flow-theme-v1";
+const ADMIN_MODE_KEY = "filament-flow-admin-v1";
+const TV_MODE_KEY = "filament-flow-tv-v1";
+const ADMIN_CODE = "31";
 
 const colorThemes = {
   "ruby red": ["#ff7d8c", "#8c1023"],
@@ -86,6 +89,13 @@ function formatAmountSummary(value) { return `${Number(value).toFixed(1)} spools
 function clampAmount(value) { return Math.min(1, Math.max(0, Number(value) || 0)); }
 function parseSheetAmount(value) { const clean = normalize(value); if (!clean) return 0; if (clean === "low") return 0.2; if (clean.endsWith("%")) return clampAmount(Number(clean.replace("%", "")) / 100); const parsed = Number(clean); return Number.isFinite(parsed) ? clampAmount(parsed) : 0; }
 function loadLocalReactions() { try { return JSON.parse(localStorage.getItem(LOCAL_REACTIONS_KEY) || "{}"); } catch { return {}; } }
+function loadBooleanPreference(key) {
+  try {
+    return localStorage.getItem(key) === "true";
+  } catch {
+    return false;
+  }
+}
 function loadThemePreference() {
   try {
     const saved = localStorage.getItem(THEME_KEY);
@@ -109,6 +119,25 @@ function applyTheme(theme) {
   try { localStorage.setItem(THEME_KEY, nextTheme); } catch {}
   state.theme = nextTheme;
 }
+function applyAdminMode(enabled) {
+  const next = Boolean(enabled);
+  document.documentElement.setAttribute("data-admin-mode", next ? "on" : "off");
+  document.body?.setAttribute("data-admin-mode", next ? "on" : "off");
+  if (els.adminModeButton) els.adminModeButton.textContent = next ? "Admin unlocked" : "Admin locked";
+  try { localStorage.setItem(ADMIN_MODE_KEY, String(next)); } catch {}
+  state.adminMode = next;
+}
+function applyTvMode(enabled) {
+  const next = Boolean(enabled);
+  document.documentElement.setAttribute("data-tv-mode", next ? "on" : "off");
+  document.body?.setAttribute("data-tv-mode", next ? "on" : "off");
+  if (els.tvModeButton) els.tvModeButton.textContent = next ? "TV mode on" : "TV mode off";
+  if (els.appShell) els.appShell.hidden = next;
+  if (els.homeButton) els.homeButton.hidden = next;
+  if (els.tvBoard) els.tvBoard.hidden = !next;
+  try { localStorage.setItem(TV_MODE_KEY, String(next)); } catch {}
+  state.tvMode = next;
+}
 
 const state = {
   inventory: loadInventory(),
@@ -124,17 +153,25 @@ const state = {
   currentPrinterId: "P1S-1",
   reactions: loadLocalReactions(),
   theme: loadThemePreference(),
+  adminMode: loadBooleanPreference(ADMIN_MODE_KEY),
+  tvMode: loadBooleanPreference(TV_MODE_KEY),
   bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
   scannerActive: false,
   scannerStream: null,
   scannerDetector: null,
-  scannerLoopId: 0
+  scannerLoopId: 0,
+  refreshInFlight: false
 };
 
 const els = {
+  appShell: document.querySelector(".app-shell"),
   statStrip: document.getElementById("stat-strip"),
   lowStockGrid: document.getElementById("low-stock-grid"),
   printerLoadGrid: document.getElementById("printer-load-grid"),
+  tvLowStockGrid: document.getElementById("tv-low-stock-grid"),
+  tvPrinterGrid: document.getElementById("tv-printer-grid"),
+  tvMatchGrid: document.getElementById("tv-match-grid"),
+  tvBoard: document.getElementById("tv-board"),
   materialFilters: document.getElementById("material-filters"),
   locationFilters: document.getElementById("location-filters"),
   modeFilters: document.getElementById("mode-filters"),
@@ -149,6 +186,8 @@ const els = {
   bambuSyncCopy: document.getElementById("bambu-sync-copy"),
   bambuSyncMeta: document.getElementById("bambu-sync-meta"),
   themeSelect: document.getElementById("theme-select"),
+  adminModeButton: document.getElementById("admin-mode-button"),
+  tvModeButton: document.getElementById("tv-mode-button"),
   startScanButton: document.getElementById("start-scan-button"),
   scanUploadInput: document.getElementById("scan-upload-input"),
   scanStatus: document.getElementById("scan-status"),
@@ -290,19 +329,30 @@ function buildInventoryFromSheetRows(rows) {
 }
 
 function loadInventory() {
+  const defaults = Array.isArray(window.DEFAULT_INVENTORY) ? window.DEFAULT_INVENTORY : [];
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) throw new Error("no saved");
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed)) throw new Error("bad saved");
-    return window.DEFAULT_INVENTORY.map((item) => {
+    const mergedDefaults = defaults.map((item) => {
       const normalizedId = normalizeTag(item.id);
       const match = parsed.find((savedItem) => normalizeTag(savedItem.id) === normalizedId);
       const merged = match ? { ...item, ...match, id: normalizedId } : { ...item, id: normalizedId };
       return { ...merged, reorderThreshold: merged.reorderThreshold ?? defaultThresholdFor(merged.material), colorFamily: merged.colorFamily || colorFamilyFor(merged.color), position: merged.position || "" };
     });
+    const extraSaved = parsed
+      .filter((savedItem) => !mergedDefaults.some((item) => normalizeTag(item.id) === normalizeTag(savedItem.id)))
+      .map((item) => ({
+        ...item,
+        id: normalizeTag(item.id),
+        reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material),
+        colorFamily: item.colorFamily || colorFamilyFor(item.color),
+        position: item.position || ""
+      }));
+    return [...mergedDefaults, ...extraSaved].sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
   } catch {
-    return window.DEFAULT_INVENTORY.map((item) => ({ ...item, id: normalizeTag(item.id), reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
+    return defaults.map((item) => ({ ...item, id: normalizeTag(item.id), reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
   }
 }
 
@@ -310,6 +360,21 @@ function saveInventory() { try { localStorage.setItem(STORAGE_KEY, JSON.stringif
 function loadLocalComments() { try { return JSON.parse(localStorage.getItem(LOCAL_COMMENTS_KEY) || "[]"); } catch { return []; } }
 function saveLocalComments(comments) { try { localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(comments)); } catch {} }
 function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, JSON.stringify(state.reactions)); } catch {} }
+function mergeInventoryWithSaved(sheetInventory) {
+  const saved = loadInventory();
+  const merged = sheetInventory.map((item) => {
+    const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
+    return match
+      ? {
+          ...item,
+          reorderThreshold: match.reorderThreshold ?? item.reorderThreshold,
+          position: match.position || item.position || ""
+        }
+      : item;
+  });
+  state.inventory = merged;
+  saveInventory();
+}
 
 async function loadInventoryFromGoogleSheet() {
   if (!config.googleSheetCsvUrl && !config.googleSheetAppsScriptUrl) return false;
@@ -324,11 +389,7 @@ async function loadInventoryFromGoogleSheet() {
         const scriptData = await scriptResponse.json();
         if (scriptData?.ok && Array.isArray(scriptData.rows) && scriptData.rows.length) {
           const sheetInventory = buildInventoryFromSheetRows(scriptData.rows);
-          const saved = loadInventory();
-          state.inventory = sheetInventory.map((item) => {
-            const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
-            return match ? { ...item, reorderThreshold: match.reorderThreshold ?? item.reorderThreshold } : item;
-          });
+          mergeInventoryWithSaved(sheetInventory);
           state.dataSourceLabel = "Google Sheet live";
           return true;
         }
@@ -341,11 +402,7 @@ async function loadInventoryFromGoogleSheet() {
     const csvText = await response.text();
     const sheetInventory = buildInventoryFromSheetCsv(csvText);
     if (!sheetInventory.length) return false;
-    const saved = loadInventory();
-    state.inventory = sheetInventory.map((item) => {
-      const match = saved.find((savedItem) => savedItem.id === item.id);
-      return match ? { ...item, reorderThreshold: match.reorderThreshold ?? item.reorderThreshold } : item;
-    });
+    mergeInventoryWithSaved(sheetInventory);
     state.dataSourceLabel = "Google Sheet live";
     return true;
   } catch {
@@ -539,6 +596,10 @@ async function startQrScanner() {
     }
     return;
   }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    updateScanStatus("This browser cannot open a live camera stream here. Use Scan from image instead.");
+    return;
+  }
   try {
     state.scannerDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
@@ -712,18 +773,26 @@ function getSelectedItem(filteredInventory) {
 }
 
 function renderStatStrip() {
+  if (!els.statStrip) return;
   const total = state.inventory.length;
   els.statStrip.innerHTML = `<article class="stat-card"><span>Total spools</span><strong>${total}</strong></article>`;
 }
 
 function renderFilters() {
-  els.materialFilters.innerHTML = getMaterials().map((material) => `<button class="filter-pill ${material === state.activeMaterial ? "active" : ""}" type="button" data-filter-type="material" data-value="${material}">${material}</button>`).join("");
-  els.locationFilters.innerHTML = getLocations().map((location) => `<button class="filter-pill ${location === state.activeLocation ? "active" : ""}" type="button" data-filter-type="location" data-value="${location}">${location}</button>`).join("");
+  if (els.materialFilters) els.materialFilters.innerHTML = getMaterials().map((material) => `<button class="filter-pill ${material === state.activeMaterial ? "active" : ""}" type="button" data-filter-type="material" data-value="${material}">${material}</button>`).join("");
+  if (els.locationFilters) els.locationFilters.innerHTML = getLocations().map((location) => `<button class="filter-pill ${location === state.activeLocation ? "active" : ""}" type="button" data-filter-type="location" data-value="${location}">${location}</button>`).join("");
   if (els.modeFilters) els.modeFilters.innerHTML = getModes().map((mode) => `<button class="filter-pill ${mode === state.activeMode ? "active" : ""}" type="button" data-filter-type="mode" data-value="${mode}">${mode}</button>`).join("");
   if (els.familyFilters) els.familyFilters.innerHTML = getFamilies().map((family) => `<button class="filter-pill ${family === state.activeFamily ? "active" : ""}" type="button" data-filter-type="family" data-value="${family}">${family}</button>`).join("");
 }
 
 function renderFeatured(item) {
+  if (!item) {
+    els.featuredName.textContent = "No filament loaded";
+    els.featuredMeta.textContent = "Add or sync inventory to populate the spotlight.";
+    els.featuredAmount.innerHTML = `<span class="amount-readout">0.0 spools <small>low</small></span>`;
+    els.featuredSwatch.innerHTML = "";
+    return;
+  }
   els.featuredName.textContent = `${item.color} ${item.material}`;
   els.featuredName.classList.add("filament-name");
   els.featuredName.style.cssText = nameStyleFor(item.color);
@@ -748,8 +817,31 @@ function renderHomeDashboard() {
     }).join("");
   }
 }
+function renderTvBoard() {
+  const lowItems = getLowestStockItems();
+  if (els.tvLowStockGrid) {
+    els.tvLowStockGrid.innerHTML = lowItems.length
+      ? lowItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.location}</small></button>`).join("")
+      : `<article class="mini-home-card"><strong>No low spools right now</strong><small>Everything is above the low threshold.</small></article>`;
+  }
+  if (els.tvPrinterGrid) {
+    els.tvPrinterGrid.innerHTML = printers.map((printer) => {
+      const loaded = printer.slots.filter((entry) => entry.filament && entry.filament !== "Empty").length;
+      return `<article class="printer-card ${printer.id === state.currentPrinterId ? "active-printer" : ""}" data-printer-id="${printer.id}"><p class="eyebrow">${printer.model}</p><h3>${printer.name}</h3><p class="printer-meta">${loaded}/4 AMS slots loaded / Ext: ${printer.ext}</p><div class="slot-grid">${printer.slots.map((entry) => `<div class="slot-chip"><strong>${entry.slot}</strong><small>${entry.filament === "Empty" ? "Empty" : `${entry.color} ${entry.filament}`}</small></div>`).join("")}</div></article>`;
+    }).join("");
+  }
+  if (els.tvMatchGrid) {
+    const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
+    const targetMaterials = new Set([printer.ext, ...printer.slots.map((slot) => slot.filament)].map(normalize));
+    const matches = state.inventory.filter((item) => targetMaterials.has(normalize(item.material)) && item.amount >= 0.5).sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id)).slice(0, 4);
+    els.tvMatchGrid.innerHTML = matches.length
+      ? matches.map((item) => `<button class="match-card" type="button" data-match-id="${item.id}"><div class="match-card-head"><span class="brand-logo">${brandLogoFor(item.brand)}</span><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</h3></div><p class="inventory-subline">${item.brand} / ${item.finish} / ${formatAmountSummary(item.amount)}</p></button>`).join("")
+      : `<article class="match-card"><p class="inventory-subline">No strong matches for ${printer.name} right now.</p></article>`;
+  }
+}
 
 function renderInventoryGrid(items) {
+  if (!els.inventoryGrid || !els.resultsCopy) return;
   els.resultsCopy.textContent = `${items.length} spool${items.length === 1 ? "" : "s"} showing`;
   if (!items.length) {
     els.inventoryGrid.innerHTML = `<article class="inventory-card"><div><h3>No matching spool</h3><p class="inventory-subline">Try a different material, storage area, or search phrase.</p></div></article>`;
@@ -759,7 +851,7 @@ function renderInventoryGrid(items) {
     const availability = getAvailability(item);
     const reaction = getReactionCounts(item.id);
     return `<article class="inventory-card ${item.id === state.selectedId ? "active" : ""}" data-id="${item.id}"><div class="card-topline"><div class="card-brandline"><span class="card-id">Tag ${item.id}</span><span class="brand-logo">${brandLogoFor(item.brand)}</span></div><div class="color-badge" style="background:${swatchFor(item.color)}"></div></div><div class="card-visual">${spoolSvg(item.color, `${item.color} ${item.material} spool`, `card-${item.id}`)}</div><div><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color}</h3><p class="inventory-subline">${item.material} / ${item.finish} / ${item.brand}</p></div><div class="card-tags"><span class="badge">${item.location}</span><span class="badge">${locationBucketFor(item.location)}</span>${item.position ? `<span class="badge">${item.position}</span>` : ""}<span class="badge">${item.colorFamily}</span><span class="badge">${item.sealed}</span>${reaction.favorites > 0 ? `<span class="badge favorite">Favorite ${reaction.favorites}</span>` : ""}${reaction.likes > 0 ? `<span class="badge">Heart ${reaction.likes}</span>` : ""}${isBelowThreshold(item) ? `<span class="chip low">Reorder at ${Number(item.reorderThreshold).toFixed(1)}</span>` : ""}<span class="chip ${availability.tone}">${availability.label}</span></div><div class="card-footer"><strong class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></strong><button class="card-action" type="button" data-open-id="${item.id}">View</button></div></article>`;
-  }).join("") + `<button class="inventory-card add-card" type="button" data-open-add-filament="true"><div class="plus-icon">+</div><div><h3>Add filament</h3><p class="inventory-subline">Create a new spool entry right from the catalog.</p></div></button>`;
+  }).join("") + (state.adminMode ? `<button class="inventory-card add-card" type="button" data-open-add-filament="true"><div class="plus-icon">+</div><div><h3>Add filament</h3><p class="inventory-subline">Create a new spool entry right from the catalog.</p></div></button>` : "");
 }
 
 function renderComments() {
@@ -812,7 +904,7 @@ function amazonUrlFor(item) {
 }
 
 function openAddFilamentModal() {
-  if (!els.addFilamentModal) return;
+  if (!state.adminMode || !els.addFilamentModal) return;
   els.newTag.value = "";
   els.newMaterial.value = "PLA";
   els.newFinish.value = "Normal";
@@ -948,6 +1040,7 @@ function adjustSelectedAmount(delta) {
 }
 
 function updateSelectedPlacement(nextLocation, nextPosition) {
+  if (!state.adminMode) return;
   const item = state.inventory.find((entry) => entry.id === state.selectedId);
   if (!item) return;
   if (nextLocation) item.location = nextLocation;
@@ -958,6 +1051,7 @@ function updateSelectedPlacement(nextLocation, nextPosition) {
 }
 
 function updateSelectedSeal(nextSeal) {
+  if (!state.adminMode) return;
   const item = state.inventory.find((entry) => entry.id === state.selectedId);
   if (!item || !nextSeal) return;
   item.sealed = nextSeal;
@@ -988,6 +1082,7 @@ function renderAll() {
   renderMatchGrid();
   renderStatStrip();
   renderHomeDashboard();
+  renderTvBoard();
   renderFilters();
   renderSuggestions();
   renderFeatured(selected || state.inventory[0]);
@@ -995,6 +1090,23 @@ function renderAll() {
   renderDetails(selected || null);
   if (config.googleSheetWebUrl && els.spreadsheetLink) {
     els.spreadsheetLink.href = config.googleSheetWebUrl;
+  }
+}
+
+async function refreshLiveData() {
+  if (state.refreshInFlight) return false;
+  state.refreshInFlight = true;
+  try {
+    const previousSelected = state.selectedId;
+    const loaded = await loadInventoryFromGoogleSheet();
+    await loadBambuSnapshot();
+    if (loaded && previousSelected && state.inventory.some((item) => item.id === previousSelected)) {
+      state.selectedId = previousSelected;
+    }
+    renderAll();
+    return loaded;
+  } finally {
+    state.refreshInFlight = false;
   }
 }
 
@@ -1016,14 +1128,14 @@ function bindStaticEvents() {
   });
 
   els.resetButton?.addEventListener("click", async () => {
+    if (!state.adminMode) return;
     localStorage.removeItem(STORAGE_KEY);
     state.inventory = window.DEFAULT_INVENTORY.map((item) => ({
       ...item,
       reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material),
       colorFamily: item.colorFamily || colorFamilyFor(item.color)
     }));
-    await loadInventoryFromGoogleSheet();
-    renderAll();
+    await refreshLiveData();
   });
 
   els.searchInput?.addEventListener("input", (event) => {
@@ -1035,16 +1147,34 @@ function bindStaticEvents() {
     applyTheme(event.target.value);
     renderAll();
   });
+  els.adminModeButton?.addEventListener("click", () => {
+    if (state.adminMode) {
+      applyAdminMode(false);
+      renderAll();
+      return;
+    }
+    const code = window.prompt("Enter admin code");
+    if (code === ADMIN_CODE) {
+      applyAdminMode(true);
+      renderAll();
+    } else if (code !== null) {
+      window.alert("That code did not work.");
+    }
+  });
+  els.tvModeButton?.addEventListener("click", () => {
+    applyTvMode(!state.tvMode);
+    renderAll();
+  });
 
   document.addEventListener("click", (event) => {
     const filterButton = event.target.closest("[data-filter-type]");
     if (filterButton) {
       const type = filterButton.dataset.filterType;
       const value = filterButton.dataset.value;
-      if (type === "material") state.activeMaterial = value;
-      if (type === "location") state.activeLocation = value;
-      if (type === "mode") state.activeMode = value;
-      if (type === "family") state.activeFamily = value;
+      if (type === "material") state.activeMaterial = state.activeMaterial === value ? "All" : value;
+      if (type === "location") state.activeLocation = state.activeLocation === value ? "All" : value;
+      if (type === "mode") state.activeMode = state.activeMode === value ? "All" : value;
+      if (type === "family") state.activeFamily = state.activeFamily === value ? "All" : value;
       renderAll();
       return;
     }
@@ -1115,6 +1245,7 @@ function bindStaticEvents() {
 
   els.thresholdForm?.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!state.adminMode) return;
     const item = state.inventory.find((entry) => entry.id === state.selectedId);
     if (!item) return;
     item.reorderThreshold = Math.max(0, Number(els.thresholdInput.value || defaultThresholdFor(item.material)));
@@ -1166,6 +1297,7 @@ function bindStaticEvents() {
 
   els.addFilamentForm?.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!state.adminMode) return;
     const newItem = createFilamentFromForm();
     if (!newItem.id) return;
     state.inventory = [newItem, ...state.inventory.filter((item) => item.id !== newItem.id)]
@@ -1190,8 +1322,9 @@ function bindStaticEvents() {
 
 async function initializeApp() {
   applyTheme(state.theme);
-  await loadInventoryFromGoogleSheet();
-  await loadBambuSnapshot();
+  applyAdminMode(state.adminMode);
+  applyTvMode(state.tvMode);
+  await refreshLiveData();
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
     state.selectedId = requestedTag;
@@ -1199,23 +1332,19 @@ async function initializeApp() {
   bindStaticEvents();
   renderAll();
   window.setInterval(async () => {
-    const previousSelected = state.selectedId;
-    const loaded = await loadInventoryFromGoogleSheet();
-    await loadBambuSnapshot();
-    if (loaded && previousSelected) state.selectedId = previousSelected;
-    renderAll();
+    await refreshLiveData();
   }, Number(config.googleSheetRefreshMs || 5000));
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     applyTheme(loadThemePreference());
-    const previousSelected = state.selectedId;
-    const loaded = await loadInventoryFromGoogleSheet();
-    await loadBambuSnapshot();
-    if (loaded && previousSelected) state.selectedId = previousSelected;
-    renderAll();
+    applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
+    applyTvMode(loadBooleanPreference(TV_MODE_KEY));
+    await refreshLiveData();
   });
   window.addEventListener("pageshow", () => {
     applyTheme(loadThemePreference());
+    applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
+    applyTvMode(loadBooleanPreference(TV_MODE_KEY));
     renderAll();
   });
   window.addEventListener("beforeunload", stopQrScanner);

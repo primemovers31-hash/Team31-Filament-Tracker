@@ -36,6 +36,8 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button class="ghost-button" id="tv-mode-button" type="button">TV mode off</button>
+          <button class="ghost-button" id="admin-mode-button" type="button">Admin locked</button>
           <label class="theme-picker" for="theme-select">
             <span>Theme</span>
             <select id="theme-select">
@@ -44,7 +46,7 @@
               <option value="team31">Team 31</option>
             </select>
           </label>
-          <button class="ghost-button" id="reset-button" type="button">Reset Saved Changes</button>
+          <button class="ghost-button admin-only" id="reset-button" type="button">Reset Saved Changes</button>
         </div>
       </nav>
       <div class="hero-links">
@@ -160,7 +162,7 @@
           </div>
           <div class="catalog-actions">
             <p id="results-copy"></p>
-            <button class="primary-button" id="add-filament-button" type="button">Add filament</button>
+            <button class="primary-button admin-only" id="add-filament-button" type="button">Add filament</button>
           </div>
         </div>
         <div class="filter-row compact" id="mode-filters"></div>
@@ -206,7 +208,7 @@
           <p class="mini-label">Notes</p>
           <p id="detail-notes">No notes for this spool yet.</p>
         </section>
-        <section class="printer-assignment-card">
+        <section class="printer-assignment-card admin-only">
           <div class="comments-head">
             <div>
               <p class="mini-label">Location manager</p>
@@ -230,7 +232,7 @@
             <button class="primary-button" type="submit">Save location</button>
           </form>
         </section>
-        <section class="printer-assignment-card">
+        <section class="printer-assignment-card admin-only">
           <div class="comments-head">
             <div>
               <p class="mini-label">Reorder settings</p>
@@ -249,7 +251,7 @@
             <button class="reaction-button" id="favorite-button" type="button">Favorite <span id="favorite-count">0</span></button>
           </div>
         </section>
-        <section class="printer-assignment-card">
+        <section class="printer-assignment-card admin-only">
           <div class="comments-head">
             <div>
               <p class="mini-label">Seal status</p>
@@ -294,6 +296,45 @@
       </aside>
     </main>
   </div>
+
+  <section class="tv-board" id="tv-board" hidden>
+    <div class="tv-header">
+      <div>
+        <p class="eyebrow">Shop TV mode</p>
+        <h2>Prime Movers live board</h2>
+      </div>
+      <p class="inventory-subline">Large-screen view for printers, low stock, and best matches.</p>
+    </div>
+    <div class="tv-grid">
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Printers live</p>
+            <h3>P1S printer status</h3>
+          </div>
+        </div>
+        <div class="printer-grid tv-printer-grid" id="tv-printer-grid"></div>
+      </section>
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Reorder board</p>
+            <h3>Lowest stock right now</h3>
+          </div>
+        </div>
+        <div class="home-row-grid tv-home-grid" id="tv-low-stock-grid"></div>
+      </section>
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Printer picks</p>
+            <h3>Best matches for current printer</h3>
+          </div>
+        </div>
+        <div class="match-grid tv-match-grid" id="tv-match-grid"></div>
+      </section>
+    </div>
+  </section>
 
   <dialog class="modal" id="add-filament-modal">
     <form class="modal-card" id="add-filament-form" method="dialog">
