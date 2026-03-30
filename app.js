@@ -1339,13 +1339,13 @@ async function initializeApp() {
   applyTheme(state.theme);
   applyAdminMode(state.adminMode);
   applyTvMode(state.tvMode);
-  await refreshLiveData();
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
     state.selectedId = requestedTag;
   }
   bindStaticEvents();
   renderAll();
+  void refreshLiveData();
   window.setInterval(async () => {
     await refreshLiveData();
   }, Number(config.googleSheetRefreshMs || 5000));
