@@ -439,11 +439,11 @@ async function syncItemToGoogleSheet(item, mode = "upsert") {
   if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
   try {
     const url = new URL(config.googleSheetAppsScriptUrl);
-    const payload = buildSheetPayload(item);
+    const sheetPayload = buildSheetPayload(item);
     url.searchParams.set("action", mode);
     url.searchParams.set("secret", config.googleSheetSharedSecret || "");
     url.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
-    Object.entries(payload).forEach(([key, value]) => {
+    Object.entries(sheetPayload).forEach(([key, value]) => {
       url.searchParams.set(key, String(value ?? ""));
     });
     const response = await fetch(url.toString(), { cache: "no-store" });
