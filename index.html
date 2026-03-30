@@ -10,6 +10,17 @@
   <link rel="icon" type="image/png" href="app-icon.png">
   <link rel="apple-touch-icon" href="app-icon.png">
   <link rel="manifest" href="site.webmanifest">
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("filament-flow-theme-v1");
+        var nextTheme = ["light", "dark", "team31"].includes(savedTheme) ? savedTheme : "light";
+        document.documentElement.setAttribute("data-theme", nextTheme);
+      } catch (error) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    }());
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>

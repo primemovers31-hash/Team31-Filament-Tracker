@@ -94,10 +94,18 @@ function loadThemePreference() {
     return "light";
   }
 }
+function themeColorFor(theme) {
+  if (theme === "dark") return "#111317";
+  if (theme === "team31") return "#2f0303";
+  return "#ffffff";
+}
 function applyTheme(theme) {
   const nextTheme = ["light", "dark", "team31"].includes(theme) ? theme : "light";
   document.documentElement.setAttribute("data-theme", nextTheme);
+  document.body?.setAttribute("data-theme", nextTheme);
   if (els.themeSelect) els.themeSelect.value = nextTheme;
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute("content", themeColorFor(nextTheme));
   try { localStorage.setItem(THEME_KEY, nextTheme); } catch {}
   state.theme = nextTheme;
 }
@@ -1199,10 +1207,15 @@ async function initializeApp() {
   }, Number(config.googleSheetRefreshMs || 5000));
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
+    applyTheme(loadThemePreference());
     const previousSelected = state.selectedId;
     const loaded = await loadInventoryFromGoogleSheet();
     await loadBambuSnapshot();
     if (loaded && previousSelected) state.selectedId = previousSelected;
+    renderAll();
+  });
+  window.addEventListener("pageshow", () => {
+    applyTheme(loadThemePreference());
     renderAll();
   });
   window.addEventListener("beforeunload", stopQrScanner);
