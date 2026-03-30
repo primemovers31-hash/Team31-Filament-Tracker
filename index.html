@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Filament Flow</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Filament Flow">
+  <link rel="icon" type="image/svg+xml" href="app-icon.svg">
+  <link rel="apple-touch-icon" href="app-icon.svg">
+  <link rel="manifest" href="site.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -32,6 +38,7 @@
       </nav>
       <div class="hero-links">
         <a class="ghost-button action-link" id="spreadsheet-link" href="#" target="_blank" rel="noreferrer">Open Spreadsheet</a>
+        <a class="ghost-button action-link" href="#scanner-section">Open QR scanner</a>
       </div>
       <div class="hero-grid">
         <section class="hero-copy">
@@ -48,6 +55,44 @@
             </label>
             <div class="search-suggestions" id="search-suggestions"></div>
             <div class="stat-strip" id="stat-strip"></div>
+            <div class="home-dashboard">
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Reorder board</p>
+                    <h3>Lowest stock right now</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="low-stock-grid"></div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Printers live</p>
+                    <h3>Loaded on printers</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="printer-load-grid"></div>
+              </section>
+              <section class="home-block scanner-block" id="scanner-section">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">QR access</p>
+                    <h3>Scan a spool QR</h3>
+                  </div>
+                </div>
+                <p class="inventory-subline">Students can scan from inside the website on their phone, not just with the camera app.</p>
+                <div class="scanner-actions">
+                  <button class="primary-button" id="start-scan-button" type="button">Start camera scanner</button>
+                  <label class="ghost-button upload-button" for="scan-upload-input">Scan from image</label>
+                  <input id="scan-upload-input" type="file" accept="image/*" hidden>
+                </div>
+                <p class="comments-status" id="scan-status">Ready to scan a spool tag or QR link.</p>
+                <div class="scanner-frame" id="scanner-frame" hidden>
+                  <video id="scanner-video" playsinline muted></video>
+                </div>
+              </section>
+            </div>
           </div>
         </section>
         <section class="featured-card" id="featured-card">
@@ -142,8 +187,9 @@
         <dl class="detail-list" id="detail-list"></dl>
         <section class="printer-assignment-card">
           <p class="mini-label">Bambu auto sync</p>
-          <h3>Automatic printer reading not connected</h3>
-          <p class="inventory-subline">The current Bambu files you shared look like printer/profile bundles, not live AMS slot data. Once we have a real printer data source, this section can switch to automatic status.</p>
+          <h3 id="bambu-sync-title">Automatic printer reading not connected</h3>
+          <p class="inventory-subline" id="bambu-sync-copy">The current Bambu files you shared look like printer/profile bundles, not live AMS slot data. Once we have a real printer data source, this section can switch to automatic status.</p>
+          <p class="comments-status" id="bambu-sync-meta"></p>
         </section>
         <section class="note-card">
           <p class="mini-label">Notes</p>

@@ -5,5 +5,8 @@ window.APP_CONFIG = {
   googleSheetWebUrl: "https://docs.google.com/spreadsheets/d/1t-iFSpfAp_ZCvsw62VQI-7thumBxM93KBD-5O0v4KNU/edit?usp=sharing",
   googleSheetName: "Sheet1",
   googleSheetAppsScriptUrl: "https://script.google.com/macros/s/AKfycbyhiQst1O8SY6T6VWqV-tlwPleKCLtJpq6hmY7wKS-ut-G7r8PmYE9SSyRKRytn_rhP6w/exec",
-  googleSheetSharedSecret: "Mango_bird"
+  googleSheetSharedSecret: "Mango_bird",
+  googleSheetRefreshMs: 5000,
+  bambuSnapshotUrl: "bambu_snapshot.json",
+  bambuSnapshotRefreshMs: 5000
 };

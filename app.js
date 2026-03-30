@@ -30,12 +30,14 @@ const colorThemes = {
 const config = window.APP_CONFIG || {};
 const hasSharedComments = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 
-const printers = [
-  { id: "P1S-1", name: "JenksRobotics1", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.168.13", sd: "11.3 / 29.1 GB", source: "Screenshot snapshot", ext: "PLA", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.020" }, { slot: "A2", filament: "Unknown", color: "Unknown", k: "" }, { slot: "A3", filament: "PLA", color: "White", k: "K 0.020" }, { slot: "A4", filament: "PLA", color: "Black", k: "K 0.020" } ] },
-  { id: "P1S-2", name: "JenksRobotics2", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.160.45", sd: "9.0 / 29.1 GB", source: "Screenshot snapshot", ext: "TPU", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A2", filament: "Empty", color: "", k: "" }, { slot: "A3", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A4", filament: "PETG", color: "Black", k: "K 0.040" } ] }
+const defaultPrinters = [
+  { id: "P1S-1", deviceId: "01P00C582602448", deviceMatch: "448", name: "JenksRobotics1", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.168.13", sd: "11.3 / 29.1 GB", source: "Screenshot snapshot", ext: "PLA", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.020" }, { slot: "A2", filament: "Unknown", color: "Unknown", k: "" }, { slot: "A3", filament: "PLA", color: "White", k: "K 0.020" }, { slot: "A4", filament: "PLA", color: "Black", k: "K 0.020" } ] },
+  { id: "P1S-2", deviceId: "01P00C591201911", deviceMatch: "911", name: "JenksRobotics2", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.160.45", sd: "9.0 / 29.1 GB", source: "Screenshot snapshot", ext: "TPU", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A2", filament: "Empty", color: "", k: "" }, { slot: "A3", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A4", filament: "PETG", color: "Black", k: "K 0.040" } ] }
 ];
+let printers = defaultPrinters.map((printer) => ({ ...printer, slots: printer.slots.map((slot) => ({ ...slot })) }));
 
 function normalize(text) { return String(text || "").trim().toLowerCase(); }
+function normalizeDeviceId(value) { return String(value || "").replace(/[^A-Za-z0-9]/g, ""); }
 function normalizeTag(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -113,11 +115,18 @@ const state = {
   dataSourceLabel: "Local inventory",
   currentPrinterId: "P1S-1",
   reactions: loadLocalReactions(),
-  theme: loadThemePreference()
+  theme: loadThemePreference(),
+  bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
+  scannerActive: false,
+  scannerStream: null,
+  scannerDetector: null,
+  scannerLoopId: 0
 };
 
 const els = {
   statStrip: document.getElementById("stat-strip"),
+  lowStockGrid: document.getElementById("low-stock-grid"),
+  printerLoadGrid: document.getElementById("printer-load-grid"),
   materialFilters: document.getElementById("material-filters"),
   locationFilters: document.getElementById("location-filters"),
   modeFilters: document.getElementById("mode-filters"),
@@ -128,7 +137,15 @@ const els = {
   searchInput: document.getElementById("search-input"),
   searchSuggestions: document.getElementById("search-suggestions"),
   printerGrid: document.getElementById("printer-grid"),
+  bambuSyncTitle: document.getElementById("bambu-sync-title"),
+  bambuSyncCopy: document.getElementById("bambu-sync-copy"),
+  bambuSyncMeta: document.getElementById("bambu-sync-meta"),
   themeSelect: document.getElementById("theme-select"),
+  startScanButton: document.getElementById("start-scan-button"),
+  scanUploadInput: document.getElementById("scan-upload-input"),
+  scanStatus: document.getElementById("scan-status"),
+  scannerFrame: document.getElementById("scanner-frame"),
+  scannerVideo: document.getElementById("scanner-video"),
   featuredName: document.getElementById("featured-name"),
   featuredMeta: document.getElementById("featured-meta"),
   featuredAmount: document.getElementById("featured-amount"),
@@ -367,6 +384,16 @@ async function syncItemToGoogleSheet(item, mode = "upsert") {
   }
 }
 
+async function syncItemAndRefresh(item, mode = "upsert") {
+  const synced = await syncItemToGoogleSheet(item, mode);
+  if (!synced) return false;
+  const previousSelected = state.selectedId;
+  const loaded = await loadInventoryFromGoogleSheet();
+  if (loaded && previousSelected) state.selectedId = previousSelected;
+  renderAll();
+  return true;
+}
+
 function isBelowThreshold(item) { return Number(item.amount) <= Number(item.reorderThreshold || defaultThresholdFor(item.material)); }
 function swatchFor(color) { const stops = colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; return `linear-gradient(135deg, ${stops.join(", ")})`; }
 function colorStopsFor(color) { return colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; }
@@ -406,6 +433,202 @@ function getLocationChoices() {
 }
 function getFamilies() { return ["All", ...new Set(state.inventory.map((item) => item.colorFamily || colorFamilyFor(item.color)).sort())]; }
 function getModes() { return ["All", "Low stock", "Ready to print", "Favorites", "Most liked"]; }
+function firstLoadedSlot(printer) {
+  return printer.slots.find((slot) => slot.filament && slot.filament !== "Empty") || null;
+}
+function bestInventoryMatchForPrinterSlot(slot) {
+  if (!slot || !slot.filament || slot.filament === "Empty") return null;
+  return state.inventory
+    .filter((item) => normalize(item.material) === normalize(slot.filament) && (!slot.color || normalize(slot.color) === "unknown" || normalize(item.color) === normalize(slot.color)))
+    .sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id))[0] || null;
+}
+function getLowestStockItems() {
+  return [...state.inventory]
+    .filter((item) => item.amount < 0.3)
+    .sort((a, b) => a.amount - b.amount || Number(a.id) - Number(b.id))
+    .slice(0, 4);
+}
+function parseScannedTag(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const tag = url.searchParams.get("tag");
+    if (tag) return normalizeTag(tag);
+  } catch {}
+  const tagMatch = raw.match(/(?:tag=|tag\s*)(\d+(?:\.\d+)?)/i);
+  if (tagMatch) return normalizeTag(tagMatch[1]);
+  const numberMatch = raw.match(/\d+(?:\.\d+)?/);
+  return numberMatch ? normalizeTag(numberMatch[0]) : "";
+}
+function selectSpoolByTag(tag) {
+  const normalizedTag = normalizeTag(tag);
+  if (!normalizedTag) return false;
+  const item = state.inventory.find((entry) => normalizeTag(entry.id) === normalizedTag);
+  if (!item) return false;
+  state.selectedId = item.id;
+  renderAll();
+  document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return true;
+}
+function updateScanStatus(message) {
+  if (els.scanStatus) els.scanStatus.textContent = message;
+}
+function stopQrScanner() {
+  if (state.scannerLoopId) {
+    window.cancelAnimationFrame(state.scannerLoopId);
+    state.scannerLoopId = 0;
+  }
+  if (state.scannerStream) {
+    state.scannerStream.getTracks().forEach((track) => track.stop());
+    state.scannerStream = null;
+  }
+  if (els.scannerVideo) {
+    els.scannerVideo.pause();
+    els.scannerVideo.srcObject = null;
+  }
+  if (els.scannerFrame) els.scannerFrame.hidden = true;
+  state.scannerActive = false;
+  if (els.startScanButton) els.startScanButton.textContent = "Start camera scanner";
+}
+async function handleScannedValue(rawValue) {
+  const tag = parseScannedTag(rawValue);
+  if (!tag) {
+    updateScanStatus("QR scanned, but no spool tag was found in it.");
+    return false;
+  }
+  const ok = selectSpoolByTag(tag);
+  updateScanStatus(ok ? `Opened spool tag ${tag}.` : `Scanned tag ${tag}, but it is not in the tracker yet.`);
+  if (ok) stopQrScanner();
+  return ok;
+}
+async function scanFrameLoop() {
+  if (!state.scannerActive || !state.scannerDetector || !els.scannerVideo) return;
+  try {
+    const detections = await state.scannerDetector.detect(els.scannerVideo);
+    if (detections?.length) {
+      const rawValue = detections[0].rawValue || "";
+      if (rawValue) {
+        await handleScannedValue(rawValue);
+        return;
+      }
+    }
+  } catch {}
+  state.scannerLoopId = window.requestAnimationFrame(() => { void scanFrameLoop(); });
+}
+async function startQrScanner() {
+  if (state.scannerActive) {
+    stopQrScanner();
+    updateScanStatus("Camera scanner stopped.");
+    return;
+  }
+  if (!("BarcodeDetector" in window)) {
+    updateScanStatus("This browser does not support live camera QR scanning. Use Scan from image instead.");
+    return;
+  }
+  try {
+    state.scannerDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    state.scannerStream = stream;
+    state.scannerActive = true;
+    if (els.scannerVideo) {
+      els.scannerVideo.srcObject = stream;
+      await els.scannerVideo.play();
+    }
+    if (els.scannerFrame) els.scannerFrame.hidden = false;
+    if (els.startScanButton) els.startScanButton.textContent = "Stop camera scanner";
+    updateScanStatus("Camera is live. Point it at a spool QR code.");
+    void scanFrameLoop();
+  } catch {
+    stopQrScanner();
+    updateScanStatus("Camera access was blocked or unavailable. Try Scan from image instead.");
+  }
+}
+async function scanQrFromImage(file) {
+  if (!file) return;
+  if (!("BarcodeDetector" in window)) {
+    updateScanStatus("This browser does not support QR scanning from images.");
+    return;
+  }
+  try {
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const bitmap = await createImageBitmap(file);
+    const detections = await detector.detect(bitmap);
+    if (!detections?.length) {
+      updateScanStatus("No QR code was found in that image.");
+      return;
+    }
+    await handleScannedValue(detections[0].rawValue || "");
+  } catch {
+    updateScanStatus("That image could not be scanned.");
+  }
+}
+function titleCase(text) { return String(text || "").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()); }
+function colorNameFromHex(hex) {
+  const key = normalize(String(hex || "").replace("#", ""));
+  if (!key) return "";
+  if (key.startsWith("161616") || key.startsWith("000000")) return "Black";
+  if (key.startsWith("ffffff")) return "White";
+  if (key.startsWith("ff0000")) return "Red";
+  if (key.startsWith("00ff00")) return "Green";
+  if (key.startsWith("0000ff")) return "Blue";
+  return titleCase(key);
+}
+function createPrinterClone(printer) {
+  return { ...printer, slots: printer.slots.map((slot) => ({ ...slot })) };
+}
+function getPrinterMatch(deviceId) {
+  const normalized = normalizeDeviceId(deviceId);
+  return printers.find((printer) => normalized && (normalizeDeviceId(printer.deviceId) === normalized || normalized.endsWith(printer.deviceMatch) || normalizeDeviceId(printer.deviceId).endsWith(normalized.slice(-3))));
+}
+function applyBambuSnapshot(snapshot) {
+  printers = defaultPrinters.map((printer) => createPrinterClone(printer));
+  const printerSnapshots = Array.isArray(snapshot?.printers) ? snapshot.printers : [];
+  let connectedPrinters = 0;
+  printerSnapshots.forEach((entry) => {
+    const printer = getPrinterMatch(entry.deviceId);
+    if (!printer) return;
+    connectedPrinters += 1;
+    printer.source = "Bambu Studio local log";
+    printer.lastSyncedAt = entry.capturedAt || snapshot.generatedAt || "";
+    const slotsById = new Map((entry.amsSlots || []).map((slot) => [slot.slotId, slot]));
+    printer.slots = ["A1", "A2", "A3", "A4"].map((slotId) => {
+      const slot = slotsById.get(slotId);
+      if (!slot || slot.status === "empty") return { slot: slotId, filament: "Empty", color: "", k: "" };
+      return {
+        slot: slotId,
+        filament: slot.materialType || "Unknown",
+        color: colorNameFromHex(slot.colorHex) || "Unknown",
+        k: slot.materialCode || ""
+      };
+    });
+    printer.ext = entry.externalSpool?.materialType || "Empty";
+  });
+  state.bambuSyncStatus = connectedPrinters
+    ? { mode: "live", source: snapshot.sourceLog || config.bambuSnapshotUrl || "bambu_snapshot.json", updatedAt: snapshot.generatedAt || "", connectedPrinters }
+    : { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
+}
+
+async function loadBambuSnapshot() {
+  if (!config.bambuSnapshotUrl) {
+    printers = defaultPrinters.map((printer) => createPrinterClone(printer));
+    state.bambuSyncStatus = { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
+    return false;
+  }
+  try {
+    const url = new URL(config.bambuSnapshotUrl, window.location.href);
+    url.searchParams.set("_ts", String(Date.now()));
+    const response = await fetch(url.toString(), { cache: "no-store" });
+    if (!response.ok) throw new Error("snapshot missing");
+    const data = await response.json();
+    applyBambuSnapshot(data);
+    return state.bambuSyncStatus.mode === "live";
+  } catch {
+    printers = defaultPrinters.map((printer) => createPrinterClone(printer));
+    state.bambuSyncStatus = { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
+    return false;
+  }
+}
 
 function spoolSvg(color, label, idSeed) {
   const stops = colorStopsFor(color);
@@ -423,7 +646,7 @@ function renderPrinterGrid() {
   if (!els.printerGrid) return;
   els.printerGrid.innerHTML = printers.map((printer) => {
     const loaded = printer.slots.filter((entry) => entry.filament && entry.filament !== "Empty").length;
-    return `<article class="printer-card ${printer.id === state.currentPrinterId ? "active-printer" : ""}" data-printer-id="${printer.id}"><p class="eyebrow">${printer.model}</p><h3>${printer.name}</h3><p class="printer-meta">${loaded}/4 AMS slots loaded / Ext: ${printer.ext}</p><p class="printer-meta">IP ${printer.ip} / WLAN ${printer.wlan}</p><p class="printer-meta">Account ${printer.account} / SD ${printer.sd}</p><div class="slot-grid">${printer.slots.map((entry) => `<div class="slot-chip"><strong>${entry.slot}</strong><small>${entry.filament === "Empty" ? "Empty" : `${entry.color} ${entry.filament}`}</small><small>${entry.k || ""}</small></div>`).join("")}</div></article>`;
+    return `<article class="printer-card ${printer.id === state.currentPrinterId ? "active-printer" : ""}" data-printer-id="${printer.id}"><p class="eyebrow">${printer.model}</p><h3>${printer.name}</h3><p class="printer-meta">${loaded}/4 AMS slots loaded / Ext: ${printer.ext}</p><p class="printer-meta">IP ${printer.ip} / WLAN ${printer.wlan}</p><p class="printer-meta">Account ${printer.account} / SD ${printer.sd}</p><p class="printer-meta">Source ${printer.source}</p><div class="slot-grid">${printer.slots.map((entry) => `<div class="slot-chip"><strong>${entry.slot}</strong><small>${entry.filament === "Empty" ? "Empty" : `${entry.color} ${entry.filament}`}</small><small>${entry.k || ""}</small></div>`).join("")}</div></article>`;
   }).join("");
 }
 
@@ -432,7 +655,9 @@ function renderMatchGrid() {
   const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
   const targetMaterials = new Set([printer.ext, ...printer.slots.map((slot) => slot.filament)].map(normalize));
   const matches = state.inventory.filter((item) => targetMaterials.has(normalize(item.material)) && item.amount >= 0.5).sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id)).slice(0, 3);
-  els.matchGrid.innerHTML = matches.length ? matches.map((item) => `<article class="match-card"><span class="brand-logo">${brandLogoFor(item.brand)}</span><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</h3><p class="inventory-subline">${item.brand} / ${item.finish} / ${formatAmountSummary(item.amount)}</p></article>`).join("") : `<article class="match-card"><p class="inventory-subline">No strong matches for ${printer.name} right now.</p></article>`;
+  els.matchGrid.innerHTML = matches.length
+    ? matches.map((item) => `<button class="match-card" type="button" data-match-id="${item.id}"><div class="match-card-head"><span class="brand-logo">${brandLogoFor(item.brand)}</span><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</h3></div><p class="inventory-subline">${item.brand} / ${item.finish} / ${formatAmountSummary(item.amount)}</p></button>`).join("")
+    : `<article class="match-card"><p class="inventory-subline">No strong matches for ${printer.name} right now.</p></article>`;
 }
 
 function getFilteredInventory() {
@@ -492,6 +717,23 @@ function renderFeatured(item) {
   els.featuredMeta.textContent = `${item.brand} / ${item.finish} / ${item.location}`;
   els.featuredAmount.innerHTML = `<span class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></span>`;
   els.featuredSwatch.innerHTML = spoolSvg(item.color, `${item.color} ${item.material} spool`, `featured-${item.id}`);
+}
+
+function renderHomeDashboard() {
+  if (els.lowStockGrid) {
+    const lowItems = getLowestStockItems();
+    els.lowStockGrid.innerHTML = lowItems.length
+      ? lowItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.location}</small></button>`).join("")
+      : `<article class="mini-home-card"><strong>No low spools right now</strong><small>Everything is above the low threshold.</small></article>`;
+  }
+  if (els.printerLoadGrid) {
+    els.printerLoadGrid.innerHTML = printers.map((printer) => {
+      const loadedSlot = firstLoadedSlot(printer);
+      const matchedItem = bestInventoryMatchForPrinterSlot(loadedSlot);
+      const loadedText = loadedSlot ? `${loadedSlot.slot} ${loadedSlot.color ? `${loadedSlot.color} ` : ""}${loadedSlot.filament}`.trim() : `Ext ${printer.ext}`;
+      return `<button class="mini-home-card" type="button" data-printer-id="${printer.id}"><div class="home-card-top"><strong>${printer.name}</strong><span class="badge">${printer.ext}</span></div><small>${loadedText}</small><span>${matchedItem ? `Best spool match: Tag ${matchedItem.id}` : "Tap to inspect this printer."}</span></button>`;
+    }).join("");
+  }
 }
 
 function renderInventoryGrid(items) {
@@ -667,12 +909,28 @@ function renderDetails(item) {
   fetchCommentsForSpool(item.id);
 }
 
+function renderBambuSyncCard() {
+  if (!els.bambuSyncTitle || !els.bambuSyncCopy) return;
+  if (state.bambuSyncStatus.mode === "live") {
+    els.bambuSyncTitle.textContent = "Automatic printer reading connected";
+    els.bambuSyncCopy.textContent = `${state.bambuSyncStatus.connectedPrinters} printer${state.bambuSyncStatus.connectedPrinters === 1 ? "" : "s"} are being read from your local Bambu Studio log snapshot. The dashboard will keep using the live snapshot when the JSON feed is refreshed.`;
+    if (els.bambuSyncMeta) {
+      const sourceName = String(state.bambuSyncStatus.source || "").split(/[\\/]/).pop();
+      els.bambuSyncMeta.textContent = sourceName ? `Source ${sourceName}` : "";
+    }
+  } else {
+    els.bambuSyncTitle.textContent = "Automatic printer reading not connected";
+    els.bambuSyncCopy.textContent = "The tracker is using your saved printer snapshots right now. Run the local Bambu snapshot helper to generate bambu_snapshot.json and this section will switch over automatically.";
+    if (els.bambuSyncMeta) els.bambuSyncMeta.textContent = "Fallback mode";
+  }
+}
+
 function adjustSelectedAmount(delta) {
   const item = state.inventory.find((entry) => entry.id === state.selectedId);
   if (!item) return;
   item.amount = clampAmount(Math.round((Number(item.amount) + delta) * 10) / 10);
   saveInventory();
-  void syncItemToGoogleSheet(item, "upsert");
+  void syncItemAndRefresh(item, "upsert");
   renderAll();
 }
 
@@ -682,7 +940,7 @@ function updateSelectedPlacement(nextLocation, nextPosition) {
   if (nextLocation) item.location = nextLocation;
   item.position = String(nextPosition || "").trim();
   saveInventory();
-  void syncItemToGoogleSheet(item, "upsert");
+  void syncItemAndRefresh(item, "upsert");
   renderAll();
 }
 
@@ -691,7 +949,7 @@ function updateSelectedSeal(nextSeal) {
   if (!item || !nextSeal) return;
   item.sealed = nextSeal;
   saveInventory();
-  void syncItemToGoogleSheet(item, "upsert");
+  void syncItemAndRefresh(item, "upsert");
   renderAll();
 }
 
@@ -713,8 +971,10 @@ function renderAll() {
   state.selectedId = selected ? selected.id : null;
   syncSelectedTagToUrl(state.selectedId);
   renderPrinterGrid();
+  renderBambuSyncCard();
   renderMatchGrid();
   renderStatStrip();
+  renderHomeDashboard();
   renderFilters();
   renderSuggestions();
   renderFeatured(selected || state.inventory[0]);
@@ -735,6 +995,12 @@ function bindStaticEvents() {
   });
 
   els.homeButton?.addEventListener("click", goHome);
+  els.startScanButton?.addEventListener("click", () => { void startQrScanner(); });
+  els.scanUploadInput?.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    void scanQrFromImage(file);
+    event.target.value = "";
+  });
 
   els.resetButton?.addEventListener("click", async () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -799,6 +1065,22 @@ function bindStaticEvents() {
     if (printer && printer.dataset.printerId) {
       state.currentPrinterId = printer.dataset.printerId;
       renderAll();
+      return;
+    }
+
+    const matchCard = event.target.closest("[data-match-id]");
+    if (matchCard && matchCard.dataset.matchId) {
+      state.selectedId = matchCard.dataset.matchId;
+      renderAll();
+      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const homeCard = event.target.closest("[data-home-id]");
+    if (homeCard && homeCard.dataset.homeId) {
+      state.selectedId = homeCard.dataset.homeId;
+      renderAll();
+      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
 
@@ -877,7 +1159,7 @@ function bindStaticEvents() {
       .sort((a, b) => Number(b.id) - Number(a.id) || b.id.localeCompare(a.id));
     state.selectedId = newItem.id;
     saveInventory();
-    void syncItemToGoogleSheet(newItem, "upsert");
+    void syncItemAndRefresh(newItem, "upsert");
     closeAddFilamentModal();
     renderAll();
   });
@@ -896,6 +1178,7 @@ function bindStaticEvents() {
 async function initializeApp() {
   applyTheme(state.theme);
   await loadInventoryFromGoogleSheet();
+  await loadBambuSnapshot();
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
     state.selectedId = requestedTag;
@@ -905,16 +1188,19 @@ async function initializeApp() {
   window.setInterval(async () => {
     const previousSelected = state.selectedId;
     const loaded = await loadInventoryFromGoogleSheet();
+    await loadBambuSnapshot();
     if (loaded && previousSelected) state.selectedId = previousSelected;
-    if (loaded) renderAll();
-  }, 5000);
+    renderAll();
+  }, Number(config.googleSheetRefreshMs || 5000));
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
     const previousSelected = state.selectedId;
     const loaded = await loadInventoryFromGoogleSheet();
+    await loadBambuSnapshot();
     if (loaded && previousSelected) state.selectedId = previousSelected;
-    if (loaded) renderAll();
+    renderAll();
   });
+  window.addEventListener("beforeunload", stopQrScanner);
 }
 
 initializeApp();
