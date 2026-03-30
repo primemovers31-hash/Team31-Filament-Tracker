@@ -362,6 +362,7 @@ function loadLocalComments() { try { return JSON.parse(localStorage.getItem(LOCA
 function saveLocalComments(comments) { try { localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(comments)); } catch {} }
 function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, JSON.stringify(state.reactions)); } catch {} }
 function mergeInventoryWithSaved(sheetInventory) {
+  if (!Array.isArray(sheetInventory) || !sheetInventory.length) return false;
   const saved = loadInventory();
   const merged = sheetInventory.map((item) => {
     const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
@@ -375,6 +376,7 @@ function mergeInventoryWithSaved(sheetInventory) {
   });
   state.inventory = merged;
   saveInventory();
+  return true;
 }
 
 async function loadInventoryFromGoogleSheet() {
@@ -390,9 +392,10 @@ async function loadInventoryFromGoogleSheet() {
         const scriptData = await scriptResponse.json();
         if (scriptData?.ok && Array.isArray(scriptData.rows) && scriptData.rows.length) {
           const sheetInventory = buildInventoryFromSheetRows(scriptData.rows);
-          mergeInventoryWithSaved(sheetInventory);
-          state.dataSourceLabel = "Google Sheet live";
-          return true;
+          if (mergeInventoryWithSaved(sheetInventory)) {
+            state.dataSourceLabel = "Google Sheet live";
+            return true;
+          }
         }
       }
     }
@@ -403,7 +406,7 @@ async function loadInventoryFromGoogleSheet() {
     const csvText = await response.text();
     const sheetInventory = buildInventoryFromSheetCsv(csvText);
     if (!sheetInventory.length) return false;
-    mergeInventoryWithSaved(sheetInventory);
+    if (!mergeInventoryWithSaved(sheetInventory)) return false;
     state.dataSourceLabel = "Google Sheet live";
     return true;
   } catch {
