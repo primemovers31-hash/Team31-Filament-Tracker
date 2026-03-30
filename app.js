@@ -172,6 +172,7 @@ const els = {
   tvPrinterGrid: document.getElementById("tv-printer-grid"),
   tvMatchGrid: document.getElementById("tv-match-grid"),
   tvBoard: document.getElementById("tv-board"),
+  tvExitButton: document.getElementById("tv-exit-button"),
   materialFilters: document.getElementById("material-filters"),
   locationFilters: document.getElementById("location-filters"),
   modeFilters: document.getElementById("mode-filters"),
@@ -1163,6 +1164,10 @@ function bindStaticEvents() {
   });
   els.tvModeButton?.addEventListener("click", () => {
     applyTvMode(!state.tvMode);
+    renderAll();
+  });
+  els.tvExitButton?.addEventListener("click", () => {
+    applyTvMode(false);
     renderAll();
   });
 
