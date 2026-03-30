@@ -523,7 +523,12 @@ async function startQrScanner() {
     return;
   }
   if (!("BarcodeDetector" in window)) {
-    updateScanStatus("This browser does not support live camera QR scanning. Use Scan from image instead.");
+    if (els.scanUploadInput) {
+      updateScanStatus("This browser will use the phone camera upload flow instead of live QR detection.");
+      els.scanUploadInput.click();
+    } else {
+      updateScanStatus("This browser does not support live camera QR scanning. Use Scan from image instead.");
+    }
     return;
   }
   try {
@@ -547,7 +552,7 @@ async function startQrScanner() {
 async function scanQrFromImage(file) {
   if (!file) return;
   if (!("BarcodeDetector" in window)) {
-    updateScanStatus("This browser does not support QR scanning from images.");
+    updateScanStatus("This browser can open the camera, but it cannot decode QR images automatically here. Use the normal camera app if this phone does not scan from the picker.");
     return;
   }
   try {

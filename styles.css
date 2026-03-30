@@ -365,6 +365,10 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 .mini-home-card span {
   display: block;
 }
+.mini-home-card strong,
+.mini-home-card span {
+  color: var(--ink);
+}
 .mini-home-card small {
   color: var(--muted);
 }
@@ -499,6 +503,19 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 }
 .match-card .inventory-subline {
   margin: 0;
+}
+.match-card .filament-name,
+.mini-home-card .filament-name {
+  background: none;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+}
+[data-theme="dark"] .match-card .filament-name,
+[data-theme="dark"] .mini-home-card .filament-name {
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 [data-theme="dark"] .match-card {
   background: rgba(24, 29, 37, 0.94);
@@ -1062,7 +1079,11 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .search-suggestion strong,
 [data-theme="team31"] .search-suggestion small,
 [data-theme="team31"] .badge,
-[data-theme="team31"] .card-id {
+[data-theme="team31"] .card-id,
+[data-theme="team31"] .mini-home-card strong,
+[data-theme="team31"] .mini-home-card span,
+[data-theme="team31"] .match-card .filament-name,
+[data-theme="team31"] .match-card .inventory-subline {
   color: #5f0a0a;
 }
 [data-theme="team31"] .detail-list dd,
