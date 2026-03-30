@@ -375,6 +375,21 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
   color: var(--muted);
   font-weight: 600;
 }
+.mini-home-card .home-card-top .badge {
+  color: #7b2c1f;
+  font-weight: 800;
+}
+.mini-home-card .brand-logo {
+  background: #2b2b2d;
+  color: #fff7f4;
+}
+.mini-home-card .filament-name {
+  font-weight: 800;
+}
+.mini-home-card small,
+.mini-home-card .inventory-subline {
+  color: #7f5e55;
+}
 .mini-home-card .home-card-top {
   display: flex;
   align-items: center;
@@ -1101,7 +1116,21 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .match-card .filament-name,
 [data-theme="team31"] .match-card .inventory-subline,
 [data-theme="team31"] .mini-home-card small {
-  color: #5f0a0a;
+  color: #4b0606;
+}
+[data-theme="team31"] .mini-home-card {
+  border-color: rgba(120, 20, 20, 0.16);
+  background: linear-gradient(180deg, rgba(255, 247, 244, 0.99), rgba(247, 233, 227, 0.97));
+}
+[data-theme="team31"] .mini-home-card .home-card-top .badge {
+  color: #7c1a1a;
+}
+[data-theme="team31"] .mini-home-card .brand-logo {
+  background: #3a2f2f;
+  color: #fff7f4;
+}
+[data-theme="team31"] .mini-home-card small {
+  color: rgba(75, 6, 6, 0.72);
 }
 [data-theme="team31"] .home-block,
 [data-theme="team31"] .mini-home-card,
