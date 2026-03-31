@@ -718,7 +718,7 @@ function selectSpoolByTag(tag) {
   if (!item) return false;
   state.selectedId = item.id;
   renderAll();
-  document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  focusDetailPanelIfStacked();
   return true;
 }
 function updateScanStatus(message) {
@@ -740,6 +740,14 @@ function stopQrScanner() {
   if (els.scannerFrame) els.scannerFrame.hidden = true;
   state.scannerActive = false;
   if (els.startScanButton) els.startScanButton.textContent = "Start camera scanner";
+}
+function focusDetailPanelIfStacked() {
+  if (window.innerWidth > 1100) return;
+  const detailPanel = document.getElementById("detail-panel");
+  if (!detailPanel) return;
+  window.setTimeout(() => {
+    detailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 60);
 }
 async function handleScannedValue(rawValue) {
   const tag = parseScannedTag(rawValue);
@@ -1362,7 +1370,7 @@ function bindStaticEvents() {
     if (!item) return;
     state.selectedId = item.id;
     renderAll();
-    document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    focusDetailPanelIfStacked();
   });
 
   els.homeButton?.addEventListener("click", goHome);
@@ -1440,7 +1448,7 @@ function bindStaticEvents() {
     if (openButton && openButton.dataset.openId) {
       state.selectedId = openButton.dataset.openId;
       renderAll();
-      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      focusDetailPanelIfStacked();
       return;
     }
 
@@ -1450,7 +1458,7 @@ function bindStaticEvents() {
       state.search = "";
       if (els.searchInput) els.searchInput.value = "";
       renderAll();
-      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      focusDetailPanelIfStacked();
       return;
     }
 
@@ -1465,7 +1473,7 @@ function bindStaticEvents() {
     if (matchCard && matchCard.dataset.matchId) {
       state.selectedId = matchCard.dataset.matchId;
       renderAll();
-      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      focusDetailPanelIfStacked();
       return;
     }
 
@@ -1473,7 +1481,7 @@ function bindStaticEvents() {
     if (homeCard && homeCard.dataset.homeId) {
       state.selectedId = homeCard.dataset.homeId;
       renderAll();
-      document.getElementById("detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      focusDetailPanelIfStacked();
       return;
     }
 
