@@ -151,7 +151,11 @@ function applySiteLock(unlocked) {
   const next = Boolean(unlocked);
   document.documentElement.setAttribute("data-site-locked", next ? "off" : "on");
   document.body?.setAttribute("data-site-locked", next ? "off" : "on");
-  if (els.siteLockScreen) els.siteLockScreen.hidden = next;
+  if (els.siteLockScreen) {
+    els.siteLockScreen.hidden = next;
+    els.siteLockScreen.style.display = next ? "none" : "grid";
+    els.siteLockScreen.setAttribute("aria-hidden", next ? "true" : "false");
+  }
   if (els.siteLockButton) els.siteLockButton.textContent = next ? "Lock site" : "Site locked";
   if (els.siteLockStatus) els.siteLockStatus.textContent = next ? "Unlocked" : "Locked";
   try { localStorage.setItem(SITE_LOCK_KEY, String(next)); } catch {}
@@ -244,6 +248,13 @@ const els = {
   likeCount: document.getElementById("like-count"),
   favoriteCount: document.getElementById("favorite-count"),
   amazonLink: document.getElementById("amazon-link"),
+  qrPreview: document.getElementById("qr-preview"),
+  qrTagCopy: document.getElementById("qr-tag-copy"),
+  qrLinkCopy: document.getElementById("qr-link-copy"),
+  copySpoolLinkButton: document.getElementById("copy-spool-link-button"),
+  downloadQrButton: document.getElementById("download-qr-button"),
+  qrDownloadLink: document.getElementById("qr-download-link"),
+  deleteFilamentButton: document.getElementById("delete-filament-button"),
   addFilamentButton: document.getElementById("add-filament-button"),
   addFilamentModal: document.getElementById("add-filament-modal"),
   addFilamentForm: document.getElementById("add-filament-form"),
@@ -550,9 +561,13 @@ async function sendSheetUpsertRequest(item, mode = "upsert") {
     url.searchParams.set("action", mode);
     url.searchParams.set("secret", config.googleSheetSharedSecret || "");
     url.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
-    Object.entries(sheetPayload).forEach(([key, value]) => {
-      url.searchParams.set(key, String(value ?? ""));
-    });
+    if (mode === "delete") {
+      url.searchParams.set("tag", String(sheetPayload.tag ?? ""));
+    } else {
+      Object.entries(sheetPayload).forEach(([key, value]) => {
+        url.searchParams.set(key, String(value ?? ""));
+      });
+    }
     const response = await fetch(url.toString(), { cache: "no-store" });
     if (response.ok) {
       const payload = await response.json().catch(() => null);
@@ -568,7 +583,7 @@ async function sendSheetUpsertRequest(item, mode = "upsert") {
         action: mode,
         secret: config.googleSheetSharedSecret || "",
         sheetName: config.googleSheetName || "Sheet1",
-        item: sheetPayload
+        item: { tag: sheetPayload.tag, ...(mode === "delete" ? {} : sheetPayload) }
       })
     });
     if (!response.ok) return false;
@@ -600,11 +615,24 @@ async function verifySheetWrite(item, attempts = 4) {
   }
   return false;
 }
+async function verifySheetDelete(itemId, attempts = 4) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    }
+    const rows = await fetchSheetRowsFromAppsScript();
+    if (!rows?.length) continue;
+    const exists = buildInventoryFromSheetRows(rows).some((entry) => normalizeTag(entry.id) === normalizeTag(itemId));
+    if (!exists) return true;
+  }
+  return false;
+}
   
 async function syncItemToGoogleSheet(item, mode = "upsert") {
   if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
   const wrote = await sendSheetUpsertRequest(item, mode);
   if (!wrote) return false;
+  if (mode === "delete") return verifySheetDelete(item.id);
   return verifySheetWrite(item);
 }
   
@@ -1068,6 +1096,14 @@ function amazonUrlFor(item) {
   const terms = [item.brand, item.color, item.material, item.finish, "filament"].filter(Boolean).join(" ");
   return `https://www.amazon.com/s?k=${encodeURIComponent(terms)}`;
 }
+function spoolUrlFor(item) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("tag", item.id);
+  return url.toString();
+}
+function qrImageUrlFor(item) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=12&data=${encodeURIComponent(spoolUrlFor(item))}`;
+}
 
 function openAddFilamentModal() {
   if (!state.adminMode || !els.addFilamentModal) return;
@@ -1126,8 +1162,13 @@ function renderDetails(item) {
     els.thresholdInput.value = "0.3";
     els.likeCount.textContent = "0";
     els.favoriteCount.textContent = "0";
-    els.amazonLink.href = "https://www.amazon.com/";
-    if (els.locationSelect) els.locationSelect.innerHTML = "";
+      els.amazonLink.href = "https://www.amazon.com/";
+      if (els.qrPreview) els.qrPreview.src = "";
+      if (els.qrTagCopy) els.qrTagCopy.textContent = "Tag";
+      if (els.qrLinkCopy) els.qrLinkCopy.textContent = "Open this spool directly from a phone camera or from inside the tracker scanner.";
+      if (els.downloadQrButton) els.downloadQrButton.href = "#";
+      if (els.qrDownloadLink) els.qrDownloadLink.href = "#";
+      if (els.locationSelect) els.locationSelect.innerHTML = "";
     if (els.positionInput) els.positionInput.value = "";
     if (els.sealSelect) els.sealSelect.innerHTML = "";
     if (els.locationBucket) els.locationBucket.textContent = "On shelf";
@@ -1177,6 +1218,13 @@ function renderDetails(item) {
   els.likeCount.textContent = String(reaction.likes || 0);
   els.favoriteCount.textContent = String(reaction.favorites || 0);
   els.amazonLink.href = amazonUrlFor(item);
+  const spoolUrl = spoolUrlFor(item);
+  const qrUrl = qrImageUrlFor(item);
+  if (els.qrPreview) els.qrPreview.src = qrUrl;
+  if (els.qrTagCopy) els.qrTagCopy.textContent = `Tag ${item.id}`;
+  if (els.qrLinkCopy) els.qrLinkCopy.textContent = spoolUrl;
+  if (els.downloadQrButton) els.downloadQrButton.href = qrUrl;
+  if (els.qrDownloadLink) els.qrDownloadLink.href = qrUrl;
   fetchCommentsForSpool(item.id);
 }
 
@@ -1216,7 +1264,7 @@ function updateSelectedPlacement(nextLocation, nextPosition) {
   renderAll();
 }
 
-function updateSelectedSeal(nextSeal) {
+  function updateSelectedSeal(nextSeal) {
   if (!state.adminMode) return;
   const item = state.inventory.find((entry) => entry.id === state.selectedId);
   if (!item || !nextSeal) return;
@@ -1257,6 +1305,30 @@ function renderAll() {
   if (config.googleSheetWebUrl && els.spreadsheetLink) {
     els.spreadsheetLink.href = config.googleSheetWebUrl;
   }
+async function deleteSelectedFilament() {
+  if (!state.adminMode || !state.selectedId) return;
+  const item = state.inventory.find((entry) => entry.id === state.selectedId);
+  if (!item) return;
+  const confirmed = window.confirm(`Remove filament tag ${item.id} from the tracker and spreadsheet?`);
+  if (!confirmed) return;
+  const previousId = state.selectedId;
+  state.inventory = state.inventory.filter((entry) => entry.id !== previousId);
+  delete state.reactions[previousId];
+  clearPendingSheetWrite(previousId);
+  state.selectedId = state.inventory[0]?.id || null;
+  saveInventory();
+  saveLocalReactions();
+  renderAll();
+  const deleted = await syncItemToGoogleSheet(item, "delete");
+  if (!deleted) {
+    await loadInventoryFromGoogleSheet();
+    renderAll();
+    window.alert("The filament was removed locally, but the spreadsheet delete did not confirm. Please refresh and try again.");
+  } else {
+    await loadInventoryFromGoogleSheet();
+    renderAll();
+  }
+}
 }
 
 async function refreshLiveData() {
@@ -1459,6 +1531,23 @@ function bindStaticEvents() {
     state.reactions[state.selectedId] = { ...current, favorites: (current.favorites || 0) + 1 };
     saveLocalReactions();
     renderAll();
+  });
+  els.copySpoolLinkButton?.addEventListener("click", async () => {
+    const item = state.inventory.find((entry) => entry.id === state.selectedId);
+    if (!item) return;
+    const link = spoolUrlFor(item);
+    try {
+      await navigator.clipboard.writeText(link);
+      if (els.qrLinkCopy) els.qrLinkCopy.textContent = "Spool link copied.";
+      window.setTimeout(() => {
+        if (els.qrLinkCopy && state.selectedId === item.id) els.qrLinkCopy.textContent = link;
+      }, 1800);
+    } catch {
+      if (els.qrLinkCopy) els.qrLinkCopy.textContent = link;
+    }
+  });
+  els.deleteFilamentButton?.addEventListener("click", () => {
+    void deleteSelectedFilament();
   });
 
   els.locationForm?.addEventListener("submit", (event) => {
