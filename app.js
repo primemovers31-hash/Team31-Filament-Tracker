@@ -4,6 +4,7 @@ const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
 const THEME_KEY = "filament-flow-theme-v1";
 const ADMIN_MODE_KEY = "filament-flow-admin-v1";
 const TV_MODE_KEY = "filament-flow-tv-v1";
+const STATION_MODE_KEY = "filament-flow-station-v1";
 const ADMIN_CODE = "31";
 const SITE_ACCESS_CODE = "3131";
 
@@ -139,6 +140,20 @@ function applyTvMode(enabled) {
   try { localStorage.setItem(TV_MODE_KEY, String(next)); } catch {}
   state.tvMode = next;
 }
+function applyStationMode(enabled) {
+  const next = Boolean(enabled);
+  document.documentElement.setAttribute("data-station-mode", next ? "on" : "off");
+  document.body?.setAttribute("data-station-mode", next ? "on" : "off");
+  if (els.stationModeButton) els.stationModeButton.textContent = next ? "Station mode on" : "Station mode off";
+  try { localStorage.setItem(STATION_MODE_KEY, String(next)); } catch {}
+  state.stationMode = next;
+  if (next) {
+    window.setTimeout(() => {
+      els.stationScanInput?.focus();
+      els.stationScanInput?.select();
+    }, 80);
+  }
+}
 function applySiteLock(unlocked) {
   const next = Boolean(unlocked);
   document.documentElement.setAttribute("data-site-locked", next ? "off" : "on");
@@ -169,6 +184,7 @@ const state = {
   theme: loadThemePreference(),
   adminMode: loadBooleanPreference(ADMIN_MODE_KEY),
   tvMode: loadBooleanPreference(TV_MODE_KEY),
+  stationMode: loadBooleanPreference(STATION_MODE_KEY),
   siteUnlocked: false,
   bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
   scannerActive: false,
@@ -186,9 +202,12 @@ const els = {
   siteLockInput: document.getElementById("site-lock-input"),
   siteLockStatus: document.getElementById("site-lock-status"),
   siteLockButton: document.getElementById("site-lock-button"),
+  stationModeButton: document.getElementById("station-mode-button"),
   statStrip: document.getElementById("stat-strip"),
   lowStockGrid: document.getElementById("low-stock-grid"),
   printerLoadGrid: document.getElementById("printer-load-grid"),
+  reorderQueueGrid: document.getElementById("reorder-queue-grid"),
+  returnPromptGrid: document.getElementById("return-prompt-grid"),
   tvLowStockGrid: document.getElementById("tv-low-stock-grid"),
   tvPrinterGrid: document.getElementById("tv-printer-grid"),
   tvMatchGrid: document.getElementById("tv-match-grid"),
@@ -211,6 +230,12 @@ const els = {
   adminModeButton: document.getElementById("admin-mode-button"),
   tvModeButton: document.getElementById("tv-mode-button"),
   startScanButton: document.getElementById("start-scan-button"),
+  stationScanInput: document.getElementById("station-scan-input"),
+  focusScanInputButton: document.getElementById("focus-scan-input-button"),
+  stationScanStatus: document.getElementById("station-scan-status"),
+  stationActionsPanel: document.getElementById("station-actions-panel"),
+  stationSelectedSummary: document.getElementById("station-selected-summary"),
+  printerShortcutGrid: document.getElementById("printer-shortcut-grid"),
   scanUploadInput: document.getElementById("scan-upload-input"),
   scanStatus: document.getElementById("scan-status"),
   scannerFrame: document.getElementById("scanner-frame"),
@@ -698,6 +723,126 @@ function getLowestStockItems() {
     .sort((a, b) => a.amount - b.amount || Number(a.id) - Number(b.id))
     .slice(0, 4);
 }
+function getReorderQueueItems() {
+  return [...state.inventory]
+    .filter((item) => isBelowThreshold(item))
+    .sort((a, b) => a.amount - b.amount || Number(a.id) - Number(b.id))
+    .slice(0, 8);
+}
+function getPrinterLoadedInventory() {
+  return state.inventory.filter((item) => locationBucketFor(item.location) === "In printer");
+}
+function updateStationStatus(message) {
+  if (els.stationScanStatus) els.stationScanStatus.textContent = message;
+}
+function getSelectedStationItem() {
+  return state.inventory.find((entry) => entry.id === state.selectedId) || null;
+}
+function setItemAmount(item, nextAmount) {
+  if (!item) return;
+  item.amount = clampAmount(nextAmount);
+  saveInventory();
+  void syncItemAndRefresh(item, "upsert");
+  renderAll();
+}
+function setItemPlacement(item, nextLocation, nextPosition = "") {
+  if (!item) return;
+  item.location = nextLocation || item.location;
+  item.position = String(nextPosition || "").trim();
+  saveInventory();
+  void syncItemAndRefresh(item, "upsert");
+  renderAll();
+}
+function openAddFilamentForScannedTag(tag) {
+  if (!state.adminMode) {
+    updateStationStatus(`Tag ${tag} is not in the tracker yet. Turn on admin mode to create it quickly.`);
+    return;
+  }
+  openAddFilamentModal();
+  if (els.newTag) els.newTag.value = tag;
+  if (els.newLocation) els.newLocation.value = "Cabinet 1 Misc.";
+  if (els.newPosition) els.newPosition.value = "";
+  updateStationStatus(`Tag ${tag} was not found. Fill in the new filament form.`);
+}
+function handleStationScan(rawValue) {
+  const tag = parseScannedTag(rawValue);
+  if (!tag) {
+    updateStationStatus("No filament tag was found in that scan.");
+    return false;
+  }
+  const found = selectSpoolByTag(tag);
+  if (found) {
+    updateStationStatus(`Opened spool tag ${tag}. Choose a quick action below.`);
+    return true;
+  }
+  openAddFilamentForScannedTag(tag);
+  return false;
+}
+function renderStationActions() {
+  if (!els.stationActionsPanel || !els.stationSelectedSummary || !els.printerShortcutGrid) return;
+  const item = getSelectedStationItem();
+  if (!item) {
+    els.stationSelectedSummary.textContent = "Choose or scan a spool";
+    els.printerShortcutGrid.innerHTML = "";
+    return;
+  }
+  els.stationSelectedSummary.textContent = `Tag ${item.id} • ${item.color} ${item.material}`;
+  els.printerShortcutGrid.innerHTML = printers.map((printer) => {
+    const slotButtons = ["A1", "A2", "A3", "A4", "Ext"].map((slot) => {
+      const label = slot === "Ext" ? `${printer.name} Ext` : `${printer.name} ${slot}`;
+      return `<button class="filter-pill" type="button" data-station-assign="${printer.id}|${slot}">${label}</button>`;
+    }).join("");
+    return `<div class="station-printer-group"><strong>${printer.name}</strong><div class="quick-action-grid">${slotButtons}</div></div>`;
+  }).join("");
+}
+function applyStationAction(action) {
+  const item = getSelectedStationItem();
+  if (!item) {
+    updateStationStatus("Scan or choose a spool first.");
+    return;
+  }
+  if (action === "used-some") {
+    setItemAmount(item, Math.round((item.amount - 0.1) * 10) / 10);
+    updateStationStatus(`Marked tag ${item.id} as used some.`);
+    return;
+  }
+  if (action === "used-lot") {
+    setItemAmount(item, Math.round((item.amount - 0.3) * 10) / 10);
+    updateStationStatus(`Marked tag ${item.id} as used a lot.`);
+    return;
+  }
+  if (action === "mark-low") {
+    setItemAmount(item, 0.2);
+    updateStationStatus(`Marked tag ${item.id} as low.`);
+    return;
+  }
+  if (action === "mark-empty") {
+    setItemAmount(item, 0);
+    updateStationStatus(`Marked tag ${item.id} as empty.`);
+    return;
+  }
+  if (action === "return-shelf") {
+    const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location) || "Cabinet 1 Misc.";
+    setItemPlacement(item, shelfChoice, "");
+    updateStationStatus(`Returned tag ${item.id} to shelf.`);
+  }
+}
+function assignSelectedToPrinterSlot(printerId, slot) {
+  const item = getSelectedStationItem();
+  if (!item) {
+    updateStationStatus("Scan or choose a spool first.");
+    return;
+  }
+  const printer = printers.find((entry) => entry.id === printerId);
+  if (!printer) return;
+  if (slot === "Ext") {
+    setItemPlacement(item, printer.name, "External spool");
+    updateStationStatus(`Loaded tag ${item.id} onto ${printer.name} external spool.`);
+    return;
+  }
+  setItemPlacement(item, printer.name, `AMS ${slot}`);
+  updateStationStatus(`Loaded tag ${item.id} onto ${printer.name} ${slot}.`);
+}
 function parseScannedTag(rawValue) {
   const raw = String(rawValue || "").trim();
   if (!raw) return "";
@@ -1009,6 +1154,19 @@ function renderHomeDashboard() {
       return `<button class="mini-home-card" type="button" data-printer-id="${printer.id}"><div class="home-card-top"><strong>${printer.name}</strong><span class="badge">${printer.ext}</span></div><small>${loadedText}</small><span>${matchedItem ? `Best spool match: Tag ${matchedItem.id}` : "Tap to inspect this printer."}</span></button>`;
     }).join("");
   }
+  if (els.reorderQueueGrid) {
+    const reorderItems = getReorderQueueItems();
+    els.reorderQueueGrid.innerHTML = reorderItems.length
+      ? reorderItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / reorder at ${formatAmountSummary(item.reorderThreshold ?? defaultThresholdFor(item.material))}</small></button>`).join("")
+      : `<article class="mini-home-card"><strong>No reorder queue</strong><small>Nothing is currently below threshold.</small></article>`;
+  }
+  if (els.returnPromptGrid) {
+    const printerItems = getPrinterLoadedInventory();
+    els.returnPromptGrid.innerHTML = printerItems.length
+      ? printerItems.map((item) => `<article class="mini-home-card"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${item.location}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.position || "Loaded on printer"}</small><button class="card-action" type="button" data-return-home-id="${item.id}">Yes, return to shelf</button></article>`).join("")
+      : `<article class="mini-home-card"><strong>All clear</strong><small>No spool is currently marked as sitting on a printer.</small></article>`;
+  }
+  renderStationActions();
 }
 function renderTvBoard() {
   const lowItems = getLowestStockItems();
@@ -1365,6 +1523,10 @@ function bindStaticEvents() {
     applySiteLock(false);
     stopQrScanner();
   });
+  els.stationModeButton?.addEventListener("click", () => {
+    applyStationMode(!state.stationMode);
+    renderAll();
+  });
   els.jumpFeatured?.addEventListener("click", () => {
     const item = getSelectedItem(getFilteredInventory());
     if (!item) return;
@@ -1374,6 +1536,18 @@ function bindStaticEvents() {
   });
 
   els.homeButton?.addEventListener("click", goHome);
+  els.focusScanInputButton?.addEventListener("click", () => {
+    els.stationScanInput?.focus();
+    els.stationScanInput?.select();
+  });
+  els.stationScanInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const rawValue = String(event.target.value || "").trim();
+    if (!rawValue) return;
+    handleStationScan(rawValue);
+    event.target.value = "";
+  });
   els.startScanButton?.addEventListener("click", () => { void startQrScanner(); });
   els.scanUploadInput?.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
@@ -1482,6 +1656,31 @@ function bindStaticEvents() {
       state.selectedId = homeCard.dataset.homeId;
       renderAll();
       focusDetailPanelIfStacked();
+      return;
+    }
+
+    const returnHomeButton = event.target.closest("[data-return-home-id]");
+    if (returnHomeButton && returnHomeButton.dataset.returnHomeId) {
+      state.selectedId = returnHomeButton.dataset.returnHomeId;
+      const item = getSelectedStationItem();
+      if (item) {
+        const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location) || "Cabinet 1 Misc.";
+        setItemPlacement(item, shelfChoice, "");
+        updateStationStatus(`Returned tag ${item.id} to shelf.`);
+      }
+      return;
+    }
+
+    const stationAction = event.target.closest("[data-station-action]");
+    if (stationAction && stationAction.dataset.stationAction) {
+      applyStationAction(stationAction.dataset.stationAction);
+      return;
+    }
+
+    const stationAssign = event.target.closest("[data-station-assign]");
+    if (stationAssign && stationAssign.dataset.stationAssign) {
+      const [printerId, slot] = stationAssign.dataset.stationAssign.split("|");
+      assignSelectedToPrinterSlot(printerId, slot);
       return;
     }
 
@@ -1599,6 +1798,7 @@ async function initializeApp() {
   applyTheme(state.theme);
   applyAdminMode(state.adminMode);
   applyTvMode(state.tvMode);
+  applyStationMode(state.stationMode);
   applySiteLock(false);
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
@@ -1615,12 +1815,14 @@ async function initializeApp() {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
+    applyStationMode(loadBooleanPreference(STATION_MODE_KEY));
     await refreshLiveData();
   });
   window.addEventListener("pageshow", () => {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
+    applyStationMode(loadBooleanPreference(STATION_MODE_KEY));
     applySiteLock(false);
     renderAll();
   });

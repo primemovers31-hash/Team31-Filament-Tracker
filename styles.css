@@ -423,6 +423,30 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
   overflow-x: auto;
   padding-bottom: 4px;
 }
+.station-scan-panel,
+.station-actions-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+.quick-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.station-printer-shortcuts {
+  display: grid;
+  gap: 12px;
+}
+.station-printer-group {
+  display: grid;
+  gap: 8px;
+}
+.station-printer-group strong {
+  font-family: "Bahnschrift", "Trebuchet MS", sans-serif;
+}
 .search-suggestions:empty {
   display: none;
 }
@@ -634,6 +658,24 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
   grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
   gap: 20px;
   align-items: start;
+}
+[data-station-mode="on"] .featured-card,
+[data-station-mode="on"] .bambu-panel,
+[data-station-mode="on"] .match-panel,
+[data-station-mode="on"] .hero-copy h2,
+[data-station-mode="on"] .hero-text,
+[data-station-mode="on"] .hero-kicker,
+[data-station-mode="on"] .hero-links {
+  display: none !important;
+}
+[data-station-mode="on"] .home-dashboard {
+  gap: 18px;
+}
+[data-station-mode="on"] .scanner-block {
+  order: -1;
+}
+[data-station-mode="on"] .dashboard {
+  grid-template-columns: 1fr;
 }
 .catalog-panel, .detail-panel { padding: 24px; }
 .bambu-panel {
@@ -894,6 +936,10 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="dark"] .ghost-button {
   background: rgba(255, 255, 255, 0.06);
   color: var(--ink);
+}
+[data-theme="dark"] .station-scan-panel,
+[data-theme="dark"] .station-actions-panel {
+  background: rgba(24, 29, 37, 0.92);
 }
 [data-theme="dark"] .inventory-card,
 [data-theme="dark"] .printer-card,
@@ -1251,6 +1297,8 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .ghost-button,
 [data-theme="team31"] .filter-pill,
 [data-theme="team31"] .theme-picker select,
+[data-theme="team31"] .station-scan-panel,
+[data-theme="team31"] .station-actions-panel,
 [data-theme="team31"] .comment-form input,
 [data-theme="team31"] .comment-form textarea,
 [data-theme="team31"] .comment-form select,

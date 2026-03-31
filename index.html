@@ -51,6 +51,7 @@
           </div>
           <div class="topbar-actions">
             <button class="ghost-button" id="site-lock-button" type="button">Site locked</button>
+            <button class="ghost-button" id="station-mode-button" type="button">Station mode off</button>
             <button class="ghost-button" id="tv-mode-button" type="button">TV mode off</button>
             <button class="ghost-button" id="admin-mode-button" type="button">Admin locked</button>
             <label class="theme-picker" for="theme-select">
@@ -105,11 +106,21 @@
               <section class="home-block scanner-block" id="scanner-section">
                 <div class="section-heading compact-heading">
                   <div>
-                    <p class="eyebrow">QR access</p>
-                    <h3>Scan a spool QR</h3>
+                    <p class="eyebrow">Scan station</p>
+                    <h3>Scan a spool</h3>
                   </div>
                 </div>
-                <p class="inventory-subline">Students can scan from inside the website on their phone, not just with the camera app.</p>
+                <p class="inventory-subline">Use the barcode scanner or camera, then hit a one-click action for the spool.</p>
+                <div class="station-scan-panel">
+                  <label class="search-box" for="station-scan-input">
+                    <span>Scanner input</span>
+                    <input id="station-scan-input" type="text" inputmode="search" autocomplete="off" placeholder="Scan or type a spool tag, barcode, or QR URL">
+                  </label>
+                  <div class="scanner-actions">
+                    <button class="primary-button" id="focus-scan-input-button" type="button">Focus scan field</button>
+                  </div>
+                  <p class="comments-status" id="station-scan-status">Ready for a USB barcode scanner or manual tag entry.</p>
+                </div>
                 <div class="scanner-actions">
                   <button class="primary-button" id="start-scan-button" type="button">Start camera scanner</button>
                   <label class="ghost-button upload-button" for="scan-upload-input">Scan from image</label>
@@ -119,6 +130,40 @@
                 <div class="scanner-frame" id="scanner-frame" hidden>
                   <video id="scanner-video" playsinline muted></video>
                 </div>
+                <div class="station-actions-panel" id="station-actions-panel">
+                  <div class="comments-head">
+                    <div>
+                      <p class="mini-label">Quick actions</p>
+                      <h3 id="station-selected-summary">Choose or scan a spool</h3>
+                    </div>
+                  </div>
+                  <div class="quick-action-grid">
+                    <button class="filter-pill" type="button" data-station-action="used-some">Used some</button>
+                    <button class="filter-pill" type="button" data-station-action="used-lot">Used a lot</button>
+                    <button class="filter-pill" type="button" data-station-action="mark-low">Mark low</button>
+                    <button class="filter-pill" type="button" data-station-action="mark-empty">Mark empty</button>
+                    <button class="filter-pill" type="button" data-station-action="return-shelf">Return to shelf</button>
+                  </div>
+                  <div class="station-printer-shortcuts" id="printer-shortcut-grid"></div>
+                </div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Reorder queue</p>
+                    <h3>Needs restock</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="reorder-queue-grid"></div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Printer cleanup</p>
+                    <h3>Return spool(s)?</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="return-prompt-grid"></div>
               </section>
             </div>
           </div>
@@ -209,10 +254,31 @@
           <div class="progress-bar"><span id="detail-progress"></span></div>
           <p id="detail-status"></p>
         </div>
-        <div class="detail-actions">
-          <a class="primary-button action-link" id="amazon-link" href="#" target="_blank" rel="noreferrer">Order on Amazon</a>
-        </div>
-        <dl class="detail-list" id="detail-list"></dl>
+          <div class="detail-actions">
+            <a class="primary-button action-link" id="amazon-link" href="#" target="_blank" rel="noreferrer">Order on Amazon</a>
+            <a class="ghost-button action-link" id="qr-download-link" href="#" target="_blank" rel="noreferrer">Open QR</a>
+            <button class="ghost-button admin-only" id="delete-filament-button" type="button">Remove filament</button>
+          </div>
+          <section class="printer-assignment-card">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">QR label</p>
+                <h3>Scan this spool</h3>
+              </div>
+              <p class="comments-status" id="qr-tag-copy">Tag</p>
+            </div>
+            <div class="qr-card">
+              <img class="qr-preview" id="qr-preview" alt="Filament QR code">
+              <div class="qr-copy-group">
+                <p class="inventory-subline" id="qr-link-copy">Open this spool directly from a phone camera or from inside the tracker scanner.</p>
+                <div class="qr-actions">
+                  <button class="ghost-button" id="copy-spool-link-button" type="button">Copy spool link</button>
+                  <a class="primary-button action-link" id="download-qr-button" href="#" target="_blank" rel="noreferrer">Download QR</a>
+                </div>
+              </div>
+            </div>
+          </section>
+          <dl class="detail-list" id="detail-list"></dl>
         <section class="printer-assignment-card">
           <p class="mini-label">Bambu auto sync</p>
           <h3 id="bambu-sync-title">Automatic printer reading not connected</h3>
