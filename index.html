@@ -22,23 +22,38 @@
     }());
   </script>
   <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <button class="ghost-button floating-home" id="home-button" type="button">Home</button>
-  <div class="app-shell">
-    <header class="hero">
-      <nav class="topbar">
+  </head>
+  <body>
+    <div class="site-lock-screen" id="site-lock-screen" hidden>
+      <div class="site-lock-card">
+        <img class="site-lock-logo" src="team31-logo.png" alt="Team 31 logo">
+        <p class="eyebrow">FRC Team 31 Workshop Inventory</p>
+        <h2>Prime Movers Filament Tracker</h2>
+        <p class="site-lock-copy">Enter the site access code to open the tracker.</p>
+        <form class="site-lock-form" id="site-lock-form">
+          <label for="site-lock-input">Access code</label>
+          <input id="site-lock-input" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter site code">
+          <button class="primary-button" type="submit">Unlock tracker</button>
+        </form>
+        <p class="site-lock-status" id="site-lock-status">Locked</p>
+      </div>
+    </div>
+    <button class="ghost-button floating-home" id="home-button" type="button">Home</button>
+    <div class="app-shell">
+      <header class="hero">
+        <nav class="topbar">
         <div class="topbar-brand">
           <img class="team-logo" src="team31-logo.png" alt="Team 31 logo">
           <div>
           <p class="eyebrow">FRC Team 31 Workshop Inventory</p>
           <h1>Prime Movers Filament Tracker</h1>
           </div>
-        </div>
-        <div class="topbar-actions">
-          <button class="ghost-button" id="tv-mode-button" type="button">TV mode off</button>
-          <button class="ghost-button" id="admin-mode-button" type="button">Admin locked</button>
-          <label class="theme-picker" for="theme-select">
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="site-lock-button" type="button">Site locked</button>
+            <button class="ghost-button" id="tv-mode-button" type="button">TV mode off</button>
+            <button class="ghost-button" id="admin-mode-button" type="button">Admin locked</button>
+            <label class="theme-picker" for="theme-select">
             <span>Theme</span>
             <select id="theme-select">
               <option value="light">Light</option>

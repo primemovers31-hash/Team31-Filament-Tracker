@@ -4,7 +4,9 @@ const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
 const THEME_KEY = "filament-flow-theme-v1";
 const ADMIN_MODE_KEY = "filament-flow-admin-v1";
 const TV_MODE_KEY = "filament-flow-tv-v1";
+const SITE_LOCK_KEY = "filament-flow-site-lock-v1";
 const ADMIN_CODE = "31";
+const SITE_ACCESS_CODE = "3131";
 
 const colorThemes = {
   "ruby red": ["#ff7d8c", "#8c1023"],
@@ -96,6 +98,13 @@ function loadBooleanPreference(key) {
     return false;
   }
 }
+function loadSiteUnlockedPreference() {
+  try {
+    return localStorage.getItem(SITE_LOCK_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
 function loadThemePreference() {
   try {
     const saved = localStorage.getItem(THEME_KEY);
@@ -138,6 +147,16 @@ function applyTvMode(enabled) {
   try { localStorage.setItem(TV_MODE_KEY, String(next)); } catch {}
   state.tvMode = next;
 }
+function applySiteLock(unlocked) {
+  const next = Boolean(unlocked);
+  document.documentElement.setAttribute("data-site-locked", next ? "off" : "on");
+  document.body?.setAttribute("data-site-locked", next ? "off" : "on");
+  if (els.siteLockScreen) els.siteLockScreen.hidden = next;
+  if (els.siteLockButton) els.siteLockButton.textContent = next ? "Lock site" : "Site locked";
+  if (els.siteLockStatus) els.siteLockStatus.textContent = next ? "Unlocked" : "Locked";
+  try { localStorage.setItem(SITE_LOCK_KEY, String(next)); } catch {}
+  state.siteUnlocked = next;
+}
 
 const state = {
   inventory: loadInventory(),
@@ -155,6 +174,7 @@ const state = {
   theme: loadThemePreference(),
   adminMode: loadBooleanPreference(ADMIN_MODE_KEY),
   tvMode: loadBooleanPreference(TV_MODE_KEY),
+  siteUnlocked: loadSiteUnlockedPreference(),
   bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
   scannerActive: false,
   scannerStream: null,
@@ -166,6 +186,11 @@ const state = {
 
 const els = {
   appShell: document.querySelector(".app-shell"),
+  siteLockScreen: document.getElementById("site-lock-screen"),
+  siteLockForm: document.getElementById("site-lock-form"),
+  siteLockInput: document.getElementById("site-lock-input"),
+  siteLockStatus: document.getElementById("site-lock-status"),
+  siteLockButton: document.getElementById("site-lock-button"),
   statStrip: document.getElementById("stat-strip"),
   lowStockGrid: document.getElementById("low-stock-grid"),
   printerLoadGrid: document.getElementById("printer-load-grid"),
@@ -1253,6 +1278,22 @@ async function refreshLiveData() {
 }
 
 function bindStaticEvents() {
+  els.siteLockForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const code = String(els.siteLockInput?.value || "").trim();
+    if (code === SITE_ACCESS_CODE) {
+      if (els.siteLockInput) els.siteLockInput.value = "";
+      applySiteLock(true);
+      renderAll();
+    } else {
+      if (els.siteLockStatus) els.siteLockStatus.textContent = "That site code did not work.";
+    }
+  });
+  els.siteLockButton?.addEventListener("click", () => {
+    if (!state.siteUnlocked) return;
+    applySiteLock(false);
+    stopQrScanner();
+  });
   els.jumpFeatured?.addEventListener("click", () => {
     const item = getSelectedItem(getFilteredInventory());
     if (!item) return;
@@ -1470,6 +1511,7 @@ async function initializeApp() {
   applyTheme(state.theme);
   applyAdminMode(state.adminMode);
   applyTvMode(state.tvMode);
+  applySiteLock(state.siteUnlocked);
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
     state.selectedId = requestedTag;
@@ -1485,12 +1527,14 @@ async function initializeApp() {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
+    applySiteLock(loadSiteUnlockedPreference());
     await refreshLiveData();
   });
   window.addEventListener("pageshow", () => {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
+    applySiteLock(loadSiteUnlockedPreference());
     renderAll();
   });
   window.addEventListener("beforeunload", stopQrScanner);
