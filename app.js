@@ -4,7 +4,6 @@ const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
 const THEME_KEY = "filament-flow-theme-v1";
 const ADMIN_MODE_KEY = "filament-flow-admin-v1";
 const TV_MODE_KEY = "filament-flow-tv-v1";
-const SITE_LOCK_KEY = "filament-flow-site-lock-v1";
 const ADMIN_CODE = "31";
 const SITE_ACCESS_CODE = "3131";
 
@@ -98,13 +97,6 @@ function loadBooleanPreference(key) {
     return false;
   }
 }
-function loadSiteUnlockedPreference() {
-  try {
-    return localStorage.getItem(SITE_LOCK_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
 function loadThemePreference() {
   try {
     const saved = localStorage.getItem(THEME_KEY);
@@ -158,7 +150,6 @@ function applySiteLock(unlocked) {
   }
   if (els.siteLockButton) els.siteLockButton.textContent = next ? "Lock site" : "Site locked";
   if (els.siteLockStatus) els.siteLockStatus.textContent = next ? "Unlocked" : "Locked";
-  try { localStorage.setItem(SITE_LOCK_KEY, String(next)); } catch {}
   state.siteUnlocked = next;
 }
 
@@ -178,7 +169,7 @@ const state = {
   theme: loadThemePreference(),
   adminMode: loadBooleanPreference(ADMIN_MODE_KEY),
   tvMode: loadBooleanPreference(TV_MODE_KEY),
-  siteUnlocked: loadSiteUnlockedPreference(),
+  siteUnlocked: false,
   bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
   scannerActive: false,
   scannerStream: null,
@@ -1600,7 +1591,7 @@ async function initializeApp() {
   applyTheme(state.theme);
   applyAdminMode(state.adminMode);
   applyTvMode(state.tvMode);
-  applySiteLock(state.siteUnlocked);
+  applySiteLock(false);
   const requestedTag = getRequestedTagFromUrl();
   if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
     state.selectedId = requestedTag;
@@ -1616,14 +1607,13 @@ async function initializeApp() {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
-    applySiteLock(loadSiteUnlockedPreference());
     await refreshLiveData();
   });
   window.addEventListener("pageshow", () => {
     applyTheme(loadThemePreference());
     applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
     applyTvMode(loadBooleanPreference(TV_MODE_KEY));
-    applySiteLock(loadSiteUnlockedPreference());
+    applySiteLock(false);
     renderAll();
   });
   window.addEventListener("beforeunload", stopQrScanner);
