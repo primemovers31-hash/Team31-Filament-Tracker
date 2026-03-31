@@ -307,21 +307,36 @@ function buildInventoryFromSheetCsv(csvText) {
   });
 }
 
+function getSheetRowValue(row, keys, fallback = "") {
+  if (!row || typeof row !== "object") return fallback;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key) && row[key] != null && String(row[key]).trim() !== "") {
+      return row[key];
+    }
+  }
+  const normalizedEntries = Object.entries(row).map(([key, value]) => [normalize(key), value]);
+  for (const key of keys) {
+    const match = normalizedEntries.find(([normalizedKey, value]) => normalizedKey === normalize(key) && value != null && String(value).trim() !== "");
+    if (match) return match[1];
+  }
+  return fallback;
+}
+
 function buildInventoryFromSheetRows(rows) {
   const seenTags = new Set();
   return rows.map((row) => ({
-    id: normalizeTag(row.tag || row["Asset tag"] || ""),
-    material: String(row.filamentType || row["Filament type"] || "Unknown").toUpperCase(),
-    finish: row.specifics || row["Specifics (if neccessary)"] || "Unknown",
-    brand: row.brand || row.Brand || "Unknown",
-    sealed: normalizeSealStatus(row.sealed || row.Sealed || "Unknown"),
-    location: row.location || row.Location || "Unknown",
-    amount: parseSheetAmount(row.amountRemaining || row["Amount remaining (approximate)"] || 0),
-    reorderThreshold: defaultThresholdFor(row.filamentType || row["Filament type"] || "Unknown"),
-    restock: row.orderAgain || row["Order again"] || "Unknown",
-    notes: row.comments || row.Comments || "",
-    color: row.color || row.Color || "Unknown",
-    colorFamily: colorFamilyFor(row.color || row.Color || "Unknown"),
+    id: normalizeTag(getSheetRowValue(row, ["tag", "Asset tag"], "")),
+    material: String(getSheetRowValue(row, ["filamentType", "Filament type"], "Unknown")).toUpperCase(),
+    finish: getSheetRowValue(row, ["specifics", "Specifics (if neccessary)"], "Unknown"),
+    brand: getSheetRowValue(row, ["brand", "Brand"], "Unknown"),
+    sealed: normalizeSealStatus(getSheetRowValue(row, ["sealed", "Sealed"], "Unknown")),
+    location: getSheetRowValue(row, ["location", "Location", "Location "], "Unknown"),
+    amount: parseSheetAmount(getSheetRowValue(row, ["amountRemaining", "Amount remaining (approximate)"], 0)),
+    reorderThreshold: defaultThresholdFor(getSheetRowValue(row, ["filamentType", "Filament type"], "Unknown")),
+    restock: getSheetRowValue(row, ["orderAgain", "Order again"], "Unknown"),
+    notes: getSheetRowValue(row, ["comments", "Comments"], ""),
+    color: getSheetRowValue(row, ["color", "Color"], "Unknown"),
+    colorFamily: colorFamilyFor(getSheetRowValue(row, ["color", "Color"], "Unknown")),
     position: ""
   })).filter((item) => {
     if (!item.id || seenTags.has(item.id)) return false;
