@@ -91,6 +91,9 @@ button, input { font: inherit; }
   background: rgba(11, 7, 7, 0.66);
   backdrop-filter: blur(12px);
 }
+.site-lock-screen[hidden] {
+  display: none !important;
+}
 .site-lock-card {
   width: min(460px, calc(100vw - 32px));
   padding: 30px;
@@ -895,6 +898,10 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="dark"] .detail-actions {
   background: rgba(24, 29, 37, 0.92);
 }
+[data-theme="dark"] .qr-preview {
+  background: #ffffff;
+  border-color: rgba(255, 255, 255, 0.12);
+}
 [data-theme="dark"] .filter-pill.active,
 [data-theme="dark"] .comment-form input,
 [data-theme="dark"] .comment-form textarea,
@@ -994,6 +1001,34 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
   border: 1px solid var(--line);
   background: var(--panel-strong);
   border-radius: var(--radius-lg);
+}
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.qr-card {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 18px;
+  align-items: center;
+}
+.qr-preview {
+  width: 170px;
+  height: 170px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  object-fit: cover;
+}
+.qr-copy-group {
+  display: grid;
+  gap: 12px;
+}
+.qr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 .action-link {
   display: inline-flex;
@@ -1231,6 +1266,9 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .match-card {
   border-color: rgba(255, 233, 228, 0.14);
 }
+[data-theme="team31"] .qr-preview {
+  border-color: rgba(255, 233, 228, 0.14);
+}
 [data-theme="team31"] .card-id,
 [data-theme="team31"] .badge,
 [data-theme="team31"] .comment-item,
@@ -1244,6 +1282,9 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .match-card {
   background: rgba(255, 247, 244, 0.96);
   color: #5f0a0a;
+}
+[data-theme="team31"] .qr-preview {
+  background: rgba(255, 247, 244, 0.98);
 }
 [data-theme="team31"] .detail-list dt,
 [data-theme="team31"] .detail-list dd,
@@ -1305,6 +1346,9 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
 [data-theme="team31"] .mini-home-card,
 [data-theme="team31"] .scanner-frame,
 [data-theme="team31"] .match-card {
+  box-shadow: 0 12px 28px rgba(34, 3, 3, 0.14), inset 0 0 0 1px rgba(255,255,255,0.38);
+}
+[data-theme="team31"] .qr-preview {
   box-shadow: 0 12px 28px rgba(34, 3, 3, 0.14), inset 0 0 0 1px rgba(255,255,255,0.38);
 }
 [data-theme="team31"] .detail-list dd,
@@ -1587,4 +1631,6 @@ h1 { font-size: clamp(2.3rem, 4vw, 4.4rem); }
   .search-suggestions { flex-direction: column; }
   .detail-list { grid-template-columns: 1fr; }
   .modal-grid { grid-template-columns: 1fr; }
+  .qr-card { grid-template-columns: 1fr; }
+  .qr-preview { width: min(100%, 220px); height: auto; aspect-ratio: 1 / 1; }
 }
