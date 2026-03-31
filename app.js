@@ -1,1832 +1,1586 @@
-const STORAGE_KEY = "filament-flow-state-v1";
-const LOCAL_COMMENTS_KEY = "filament-flow-comments-v1";
-const LOCAL_REACTIONS_KEY = "filament-flow-reactions-v1";
-const THEME_KEY = "filament-flow-theme-v1";
-const ADMIN_MODE_KEY = "filament-flow-admin-v1";
-const TV_MODE_KEY = "filament-flow-tv-v1";
-const STATION_MODE_KEY = "filament-flow-station-v1";
-const ADMIN_CODE = "31";
-const SITE_ACCESS_CODE = "3131";
+(() => {
+  const rawData = window.TEAM31_HUB_DATA;
 
-const colorThemes = {
-  "ruby red": ["#ff7d8c", "#8c1023"],
-  red: ["#ff8d72", "#b11d0e"],
-  maroon: ["#a55869", "#4b1622"],
-  white: ["#ffffff", "#cfd5dd"],
-  black: ["#5e5e60", "#0d0d0e"],
-  orange: ["#ffcb66", "#e96a15"],
-  green: ["#9ae98c", "#237c38"],
-  cyan: ["#8cf6ff", "#0ea9b4"],
-  grey: ["#d2d2d6", "#6a6a70"],
-  blue: ["#8ab8ff", "#184fa5"],
-  silver: ["#f4f4f4", "#8d96a0"],
-  tan: ["#e8d3b0", "#a8875f"],
-  glow: ["#fff59c", "#72ff73"],
-  rainbow: ["#ff6a88", "#ffcf4f", "#5bdd7c", "#6d8eff"],
-  "multi-color": ["#ff7e6b", "#ffde59", "#6adc82", "#5aa5ff"],
-  "blue + green": ["#58a6ff", "#6fe0af"],
-  "rainbow forest": ["#6c51ff", "#00a878", "#d7ff64"],
-  "rainbow universe": ["#2238ff", "#ff5cad", "#ffdb54"],
-  "red + blue": ["#f33b3b", "#3a6cf7"],
-  candy: ["#f84d9f", "#53d7ff"],
-  "red + green": ["#f14646", "#3fad67"]
-};
-
-const config = window.APP_CONFIG || {};
-const hasSharedComments = Boolean(config.supabaseUrl && config.supabaseAnonKey);
-
-const defaultPrinters = [
-  { id: "P1S-1", deviceId: "01P00C582602448", deviceMatch: "448", name: "JenksRobotics1", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.168.13", sd: "11.3 / 29.1 GB", source: "Screenshot snapshot", ext: "PLA", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.020" }, { slot: "A2", filament: "Unknown", color: "Unknown", k: "" }, { slot: "A3", filament: "PLA", color: "White", k: "K 0.020" }, { slot: "A4", filament: "PLA", color: "Black", k: "K 0.020" } ] },
-  { id: "P1S-2", deviceId: "01P00C591201911", deviceMatch: "911", name: "JenksRobotics2", model: "Bambu Lab P1S", account: "user_44942413", wlan: "JPS_Network", ip: "10.113.160.45", sd: "9.0 / 29.1 GB", source: "Screenshot snapshot", ext: "TPU", slots: [ { slot: "A1", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A2", filament: "Empty", color: "", k: "" }, { slot: "A3", filament: "PETG", color: "Black", k: "K 0.040" }, { slot: "A4", filament: "PETG", color: "Black", k: "K 0.040" } ] }
-];
-let printers = defaultPrinters.map((printer) => ({ ...printer, slots: printer.slots.map((slot) => ({ ...slot })) }));
-
-function normalize(text) { return String(text || "").trim().toLowerCase(); }
-function normalizeDeviceId(value) { return String(value || "").replace(/[^A-Za-z0-9]/g, ""); }
-function normalizeTag(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return raw;
-  return Number.isInteger(numeric) ? String(numeric) : String(numeric);
-}
-function normalizeSealStatus(value) {
-  const key = normalize(value);
-  if (key === "in a bag") return "in a bag";
-  if (key === "no") return "No";
-  if (key === "unopened") return "unopened";
-  return String(value || "").trim();
-}
-function locationBucketFor(location) {
-  const key = normalize(location);
-  if (!key) return "On shelf";
-  if (key.includes("printer") || key.includes("p1s") || key.includes("jenksrobotics")) return "In printer";
-  return "On shelf";
-}
-function getRequestedTagFromUrl() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("tag");
-  } catch {
-    return null;
+  if (!rawData) {
+    return;
   }
-}
-function syncSelectedTagToUrl(tag) {
-  try {
-    const url = new URL(window.location.href);
-    if (tag) url.searchParams.set("tag", tag);
-    else url.searchParams.delete("tag");
-    window.history.replaceState({}, "", url.toString());
-  } catch {}
-}
-function defaultThresholdFor(material) { const key = normalize(material); if (key === "tpu") return 0.5; if (key === "petg") return 0.3; return 0.3; }
-function colorFamilyFor(color) { const key = normalize(color); if (key.includes("black")) return "Black"; if (key.includes("white") || key.includes("silver") || key.includes("grey")) return "Neutral"; if (key.includes("red") || key.includes("maroon") || key.includes("ruby")) return "Red"; if (key.includes("blue") || key.includes("cyan")) return "Blue"; if (key.includes("green") || key.includes("glow")) return "Green"; if (key.includes("orange") || key.includes("tan")) return "Warm"; if (key.includes("rainbow") || key.includes("multi") || key.includes("candy")) return "Multi"; return "Other"; }
-function brandLogoFor(brand) { return String(brand || "Generic").trim() || "Generic"; }
-function formatPercent(value) {
-  const amount = Math.max(0, Number(value) || 0);
-  if (amount < 0.3) return "low";
-  return `${Math.round(amount * 100)}% remaining`;
-}
-function formatAmountSummary(value) { return `${Number(value).toFixed(1)} spools`; }
-function clampAmount(value) { return Math.min(1, Math.max(0, Number(value) || 0)); }
-function parseSheetAmount(value) { const clean = normalize(value); if (!clean) return 0; if (clean === "low") return 0.2; if (clean.endsWith("%")) return clampAmount(Number(clean.replace("%", "")) / 100); const parsed = Number(clean); return Number.isFinite(parsed) ? clampAmount(parsed) : 0; }
-function loadLocalReactions() { try { return JSON.parse(localStorage.getItem(LOCAL_REACTIONS_KEY) || "{}"); } catch { return {}; } }
-function loadBooleanPreference(key) {
-  try {
-    return localStorage.getItem(key) === "true";
-  } catch {
-    return false;
-  }
-}
-function loadThemePreference() {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    return ["light", "dark", "team31"].includes(saved) ? saved : "light";
-  } catch {
-    return "light";
-  }
-}
-function themeColorFor(theme) {
-  if (theme === "dark") return "#111317";
-  if (theme === "team31") return "#2f0303";
-  return "#ffffff";
-}
-function applyTheme(theme) {
-  const nextTheme = ["light", "dark", "team31"].includes(theme) ? theme : "light";
-  document.documentElement.setAttribute("data-theme", nextTheme);
-  document.body?.setAttribute("data-theme", nextTheme);
-  if (els.themeSelect) els.themeSelect.value = nextTheme;
-  const themeMeta = document.querySelector('meta[name="theme-color"]');
-  if (themeMeta) themeMeta.setAttribute("content", themeColorFor(nextTheme));
-  try { localStorage.setItem(THEME_KEY, nextTheme); } catch {}
-  state.theme = nextTheme;
-}
-function applyAdminMode(enabled) {
-  const next = Boolean(enabled);
-  document.documentElement.setAttribute("data-admin-mode", next ? "on" : "off");
-  document.body?.setAttribute("data-admin-mode", next ? "on" : "off");
-  if (els.adminModeButton) els.adminModeButton.textContent = next ? "Admin unlocked" : "Admin locked";
-  try { localStorage.setItem(ADMIN_MODE_KEY, String(next)); } catch {}
-  state.adminMode = next;
-}
-function applyTvMode(enabled) {
-  const next = Boolean(enabled);
-  document.documentElement.setAttribute("data-tv-mode", next ? "on" : "off");
-  document.body?.setAttribute("data-tv-mode", next ? "on" : "off");
-  if (els.tvModeButton) els.tvModeButton.textContent = next ? "TV mode on" : "TV mode off";
-  if (els.appShell) els.appShell.hidden = next;
-  if (els.homeButton) els.homeButton.hidden = next;
-  if (els.tvBoard) els.tvBoard.hidden = !next;
-  try { localStorage.setItem(TV_MODE_KEY, String(next)); } catch {}
-  state.tvMode = next;
-}
-function applyStationMode(enabled) {
-  const next = Boolean(enabled);
-  document.documentElement.setAttribute("data-station-mode", next ? "on" : "off");
-  document.body?.setAttribute("data-station-mode", next ? "on" : "off");
-  if (els.stationModeButton) els.stationModeButton.textContent = next ? "Station mode on" : "Station mode off";
-  try { localStorage.setItem(STATION_MODE_KEY, String(next)); } catch {}
-  state.stationMode = next;
-  if (next) {
-    window.setTimeout(() => {
-      els.stationScanInput?.focus();
-      els.stationScanInput?.select();
-    }, 80);
-  }
-}
-function applySiteLock(unlocked) {
-  const next = Boolean(unlocked);
-  document.documentElement.setAttribute("data-site-locked", next ? "off" : "on");
-  document.body?.setAttribute("data-site-locked", next ? "off" : "on");
-  if (els.siteLockScreen) {
-    els.siteLockScreen.hidden = next;
-    els.siteLockScreen.style.display = next ? "none" : "grid";
-    els.siteLockScreen.setAttribute("aria-hidden", next ? "true" : "false");
-  }
-  if (els.siteLockButton) els.siteLockButton.textContent = next ? "Lock site" : "Site locked";
-  if (els.siteLockStatus) els.siteLockStatus.textContent = next ? "Unlocked" : "Locked";
-  state.siteUnlocked = next;
-}
 
-const state = {
-  inventory: loadInventory(),
-  activeMaterial: "All",
-  activeLocation: "All",
-  activeMode: "All",
-  activeFamily: "All",
-  search: "",
-  selectedId: null,
-  comments: [],
-  commentsLoading: false,
-  dataSourceLabel: "Local inventory",
-  currentPrinterId: "P1S-1",
-  reactions: loadLocalReactions(),
-  theme: loadThemePreference(),
-  adminMode: loadBooleanPreference(ADMIN_MODE_KEY),
-  tvMode: loadBooleanPreference(TV_MODE_KEY),
-  stationMode: loadBooleanPreference(STATION_MODE_KEY),
-  siteUnlocked: false,
-  bambuSyncStatus: { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 },
-  scannerActive: false,
-  scannerStream: null,
-  scannerDetector: null,
-  scannerLoopId: 0,
-  refreshInFlight: false,
-  pendingSheetWrites: {}
-};
-
-const els = {
-  appShell: document.querySelector(".app-shell"),
-  siteLockScreen: document.getElementById("site-lock-screen"),
-  siteLockForm: document.getElementById("site-lock-form"),
-  siteLockInput: document.getElementById("site-lock-input"),
-  siteLockStatus: document.getElementById("site-lock-status"),
-  siteLockButton: document.getElementById("site-lock-button"),
-  stationModeButton: document.getElementById("station-mode-button"),
-  statStrip: document.getElementById("stat-strip"),
-  lowStockGrid: document.getElementById("low-stock-grid"),
-  printerLoadGrid: document.getElementById("printer-load-grid"),
-  reorderQueueGrid: document.getElementById("reorder-queue-grid"),
-  returnPromptGrid: document.getElementById("return-prompt-grid"),
-  tvLowStockGrid: document.getElementById("tv-low-stock-grid"),
-  tvPrinterGrid: document.getElementById("tv-printer-grid"),
-  tvMatchGrid: document.getElementById("tv-match-grid"),
-  tvBoard: document.getElementById("tv-board"),
-  tvExitButton: document.getElementById("tv-exit-button"),
-  materialFilters: document.getElementById("material-filters"),
-  locationFilters: document.getElementById("location-filters"),
-  modeFilters: document.getElementById("mode-filters"),
-  familyFilters: document.getElementById("family-filters"),
-  inventoryGrid: document.getElementById("inventory-grid"),
-  resultsCopy: document.getElementById("results-copy"),
-  matchGrid: document.getElementById("match-grid"),
-  searchInput: document.getElementById("search-input"),
-  searchSuggestions: document.getElementById("search-suggestions"),
-  printerGrid: document.getElementById("printer-grid"),
-  bambuSyncTitle: document.getElementById("bambu-sync-title"),
-  bambuSyncCopy: document.getElementById("bambu-sync-copy"),
-  bambuSyncMeta: document.getElementById("bambu-sync-meta"),
-  themeSelect: document.getElementById("theme-select"),
-  adminModeButton: document.getElementById("admin-mode-button"),
-  tvModeButton: document.getElementById("tv-mode-button"),
-  startScanButton: document.getElementById("start-scan-button"),
-  stationScanInput: document.getElementById("station-scan-input"),
-  focusScanInputButton: document.getElementById("focus-scan-input-button"),
-  stationScanStatus: document.getElementById("station-scan-status"),
-  stationActionsPanel: document.getElementById("station-actions-panel"),
-  stationSelectedSummary: document.getElementById("station-selected-summary"),
-  printerShortcutGrid: document.getElementById("printer-shortcut-grid"),
-  scanUploadInput: document.getElementById("scan-upload-input"),
-  scanStatus: document.getElementById("scan-status"),
-  scannerFrame: document.getElementById("scanner-frame"),
-  scannerVideo: document.getElementById("scanner-video"),
-  featuredName: document.getElementById("featured-name"),
-  featuredMeta: document.getElementById("featured-meta"),
-  featuredAmount: document.getElementById("featured-amount"),
-  featuredSwatch: document.getElementById("featured-swatch"),
-  jumpFeatured: document.getElementById("jump-featured"),
-  spreadsheetLink: document.getElementById("spreadsheet-link"),
-  homeButton: document.getElementById("home-button"),
-  detailTitle: document.getElementById("detail-title"),
-  detailSubtitle: document.getElementById("detail-subtitle"),
-  detailAmount: document.getElementById("detail-amount"),
-  detailProgress: document.getElementById("detail-progress"),
-  detailStatus: document.getElementById("detail-status"),
-  detailSwatch: document.getElementById("detail-swatch"),
-  detailList: document.getElementById("detail-list"),
-  detailNotes: document.getElementById("detail-notes"),
-  thresholdForm: document.getElementById("threshold-form"),
-  thresholdInput: document.getElementById("threshold-input"),
-  sealForm: document.getElementById("seal-form"),
-  sealSelect: document.getElementById("seal-select"),
-  likeButton: document.getElementById("like-button"),
-  favoriteButton: document.getElementById("favorite-button"),
-  likeCount: document.getElementById("like-count"),
-  favoriteCount: document.getElementById("favorite-count"),
-  amazonLink: document.getElementById("amazon-link"),
-  qrPreview: document.getElementById("qr-preview"),
-  qrTagCopy: document.getElementById("qr-tag-copy"),
-  qrLinkCopy: document.getElementById("qr-link-copy"),
-  copySpoolLinkButton: document.getElementById("copy-spool-link-button"),
-  downloadQrButton: document.getElementById("download-qr-button"),
-  qrDownloadLink: document.getElementById("qr-download-link"),
-  deleteFilamentButton: document.getElementById("delete-filament-button"),
-  addFilamentButton: document.getElementById("add-filament-button"),
-  addFilamentModal: document.getElementById("add-filament-modal"),
-  addFilamentForm: document.getElementById("add-filament-form"),
-  closeAddFilament: document.getElementById("close-add-filament"),
-  newTag: document.getElementById("new-tag"),
-  newMaterial: document.getElementById("new-material"),
-  newFinish: document.getElementById("new-finish"),
-  newBrand: document.getElementById("new-brand"),
-  newColor: document.getElementById("new-color"),
-  newAmount: document.getElementById("new-amount"),
-  newThreshold: document.getElementById("new-threshold"),
-  newLocation: document.getElementById("new-location"),
-  newSealed: document.getElementById("new-sealed"),
-  newRestock: document.getElementById("new-restock"),
-  newNotes: document.getElementById("new-notes"),
-  increaseButton: document.getElementById("increase-button"),
-  decreaseButton: document.getElementById("decrease-button"),
-  resetButton: document.getElementById("reset-button"),
-  commentsStatus: document.getElementById("comments-status"),
-  commentForm: document.getElementById("comment-form"),
-  commentName: document.getElementById("comment-name"),
-  commentText: document.getElementById("comment-text"),
-  commentList: document.getElementById("comment-list"),
-  locationForm: document.getElementById("location-form"),
-  locationSelect: document.getElementById("location-select"),
-  positionInput: document.getElementById("position-input"),
-  locationBucket: document.getElementById("location-bucket"),
-  moveToPrinter: document.getElementById("move-to-printer"),
-  moveToShelf: document.getElementById("move-to-shelf"),
-  newPosition: document.getElementById("new-position")
-};
-
-function parseCsvLine(line) {
-  const values = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    const next = line[i + 1];
-    if (char === '"' && inQuotes && next === '"') { current += '"'; i += 1; continue; }
-    if (char === '"') { inQuotes = !inQuotes; continue; }
-    if (char === "," && !inQuotes) { values.push(current); current = ""; continue; }
-    current += char;
-  }
-  values.push(current);
-  return values.map((value) => value.trim());
-}
-
-function buildInventoryFromSheetCsv(csvText) {
-  const lines = csvText.replace(/\r/g, "").split("\n").filter((line) => line.trim());
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]);
-  const indexOfAny = (names, fallbackIndex = -1) => {
-    const found = headers.findIndex((header) => names.some((name) => normalize(header) === normalize(name)));
-    return found >= 0 ? found : fallbackIndex;
+  const STORAGE_KEY = "team31-hub-local-v1";
+  const DISCORD_SERVER_ID = "1472090432358973473";
+  const CATEGORY_HELP = {
+    Helpful: "Useful saves, clutch follow-through, or team-helping signals.",
+    Harassment: "Receipts that read like dogpiles, hostility, or targeted jabs.",
+    Threat: "Language that escalates into threats or violent framing.",
+    Slur: "High-priority language that should trigger adult review fast.",
+    Sexualized: "Sexualized or age-sensitive language that should stay out of team spaces.",
+    Attendance: "Signals about missing, skipping, or being unavailable.",
+    Admin: "Server or moderation actions.",
+    "Link-only": "Posts that are mostly just links, embeds, or media drops.",
+    Commendation: "Local praise and positive notes added by leadership.",
+    Conduct: "Local conduct reports or behavior checks.",
+    "Attendance Note": "Local attendance follow-ups or schedule notes."
   };
-  const tagIndex = indexOfAny(["Tag"], 0);
-  const typeIndex = indexOfAny(["Filament type"], 1);
-  const specificsIndex = indexOfAny(["Specifics (if neccessary)"], 2);
-  const brandIndex = indexOfAny(["Brand"], 3);
-  const sealedIndex = indexOfAny(["Sealed"], 4);
-  const locationIndex = indexOfAny(["Location", "System.Xml.XmlElement"], 5);
-  const amountIndex = indexOfAny(["Amount remaining (approximate)"], 6);
-  const reorderIndex = indexOfAny(["Order again"], 7);
-  const commentsIndex = indexOfAny(["Comments"], 8);
-  const colorIndex = indexOfAny(["Color"], 9);
-  const seenTags = new Set();
-  return lines.slice(1).map((line) => parseCsvLine(line)).filter((row) => row[tagIndex]).map((row) => ({
-    id: normalizeTag(row[tagIndex] || ""),
-    material: (row[typeIndex] || "Unknown").toUpperCase(),
-    finish: row[specificsIndex] || "Unknown",
-    brand: row[brandIndex] || "Unknown",
-    sealed: normalizeSealStatus(row[sealedIndex] || "Unknown"),
-    location: row[locationIndex] || "Unknown",
-    amount: parseSheetAmount(row[amountIndex]),
-    reorderThreshold: defaultThresholdFor(row[typeIndex] || "Unknown"),
-    restock: row[reorderIndex] || "Unknown",
-    notes: row[commentsIndex] || "",
-    color: row[colorIndex] || "Unknown",
-    colorFamily: colorFamilyFor(row[colorIndex] || "Unknown"),
-    position: ""
-  })).filter((item) => {
-    if (!item.id || seenTags.has(item.id)) return false;
-    seenTags.add(item.id);
-    return true;
-  });
-}
-
-function getSheetRowValue(row, keys, fallback = "") {
-  if (!row || typeof row !== "object") return fallback;
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(row, key) && row[key] != null && String(row[key]).trim() !== "") {
-      return row[key];
+  const QUICK_ACTIONS = [
+    {
+      label: "+20 Helpful Save",
+      delta: 20,
+      type: "commendation",
+      summary: "Logged a helpful save for the team."
+    },
+    {
+      label: "+35 Clutch Build",
+      delta: 35,
+      type: "commendation",
+      summary: "Delivered a clutch robotics moment worth a reward bump."
+    },
+    {
+      label: "-10 Minor Chaos",
+      delta: -10,
+      type: "conduct",
+      summary: "Minor chaos tax logged for the record."
+    },
+    {
+      label: "-25 Conduct Check",
+      delta: -25,
+      type: "conduct",
+      summary: "Conduct check logged for mentor review."
     }
-  }
-  const normalizedEntries = Object.entries(row).map(([key, value]) => [normalize(key), value]);
-  for (const key of keys) {
-    const match = normalizedEntries.find(([normalizedKey, value]) => normalizedKey === normalize(key) && value != null && String(value).trim() !== "");
-    if (match) return match[1];
-  }
-  return fallback;
-}
+  ];
+  const REWARD_TIERS = [
+    {
+      title: "Legend Status",
+      scoreRange: "900+",
+      tone: "good",
+      copy: "Prize draft priority, aux-cord dibs, and first crack at special competition perks."
+    },
+    {
+      title: "Trusted Operative",
+      scoreRange: "760-899",
+      tone: "good",
+      copy: "Reliable core member status with strong trust, delegation, and room-lead backup energy."
+    },
+    {
+      title: "Needs Tightening",
+      scoreRange: "600-759",
+      tone: "warn",
+      copy: "Still in the game, but this is where reminders, accountability, and behavior follow-up start stacking."
+    },
+    {
+      title: "Critical Review",
+      scoreRange: "Below 600",
+      tone: "risk",
+      copy: "This should mean real mentor intervention, not a meme punishment wheel."
+    }
+  ];
+  const CAPABILITY_CARDS = [
+    {
+      title: "Roster Dossiers",
+      copy: "Each member gets an account-style dossier with room assignment, codename, Discord identity, score band, and recent activity.",
+      bullets: [
+        "Tap any person to open their full dossier.",
+        "Imported receipts and local notes stack together."
+      ]
+    },
+    {
+      title: "Receipt Review",
+      copy: "Discord exports are mined into message counts, flagged categories, attachment signals, and timestamped evidence cards.",
+      bullets: [
+        "Sanitized previews show first.",
+        "Raw receipt text only appears on deliberate reveal."
+      ]
+    },
+    {
+      title: "Local Report Mode",
+      copy: "Leadership can add browser-local commendations, conduct notes, and point swings without touching the raw exports.",
+      bullets: [
+        "Quick actions are built into each dossier.",
+        "Manual reports stay on this device."
+      ]
+    },
+    {
+      title: "Competition Layer",
+      copy: "The hub already frames a playful score-and-reward system you can use for snacks, prizes, and room competitions.",
+      bullets: [
+        "Use it for rewards and motivation.",
+        "Keep real discipline in the mentor lane."
+      ]
+    }
+  ];
+  const FUTURE_MODULE_CARDS = [
+    {
+      title: "Attendance + Check-In",
+      copy: "QR or NFC sign-in, late tracking, and practice attendance trends by room and subteam.",
+      bullets: [
+        "Auto-generate attendance notes in Report Mode.",
+        "Track travel eligibility and commitment."
+      ]
+    },
+    {
+      title: "Pit + Build Board",
+      copy: "Assign pit jobs, inspection tasks, and build-season priorities with a live queue for each room.",
+      bullets: [
+        "Surface who owns each task.",
+        "Show blockers before events."
+      ]
+    },
+    {
+      title: "Competition Ops",
+      copy: "Match scouting, drive-team prep, battery rotation, checklist boards, and awards submission tracking.",
+      bullets: [
+        "This would turn Team31Hub into a true event command center.",
+        "Perfect future home for prizes and room competitions."
+      ]
+    },
+    {
+      title: "Parent + Mentor Comms",
+      copy: "Announcements, permission forms, volunteer asks, and travel reminders in one mobile feed.",
+      bullets: [
+        "Could pair with calendar and document storage later.",
+        "Cuts down on message chaos."
+      ]
+    }
+  ];
+  const INTEGRATION_CARDS = [
+    {
+      title: "No Extra Plugin Needed Right Now",
+      copy: "This static hub works locally with the files already in the folder.",
+      bullets: [
+        "Open `index.html` directly right now.",
+        "Current Discord server ID on file: " + DISCORD_SERVER_ID
+      ]
+    },
+    {
+      title: "For Live Discord Sync",
+      copy: "You will eventually want a Discord bot or export pipeline, because there is no Discord plugin available in this Codex session.",
+      bullets: [
+        "Bot could ingest messages, reports, and attendance in real time.",
+        "Webhooks could push receipts into a hosted database."
+      ]
+    },
+    {
+      title: "Helpful Later",
+      copy: "The plugins you already have would matter more once you expand beyond this feature.",
+      bullets: [
+        "Google Drive for shared docs, rosters, and leadership forms.",
+        "GitHub if you want deployment, versioning, or a real hosted app workflow."
+      ]
+    },
+    {
+      title: "For Phone Install",
+      copy: "To make this feel like a true mobile hub, host it somewhere simple and then add a service worker later.",
+      bullets: [
+        "GitHub Pages, Netlify, or Vercel are easy starts.",
+        "That is what unlocks reliable add-to-home-screen behavior."
+      ]
+    }
+  ];
+  const QUICK_LINK_CARDS = [
+    {
+      title: "Filament Tracker",
+      copy: "Jump straight into the existing Team 31 filament app.",
+      href: "https://primemovers31-hash.github.io/Team31-Filament-Tracker/",
+      label: "Open tracker"
+    },
+    {
+      title: "Team31Hub Local",
+      copy: "This page is the command center shell for roster, files, reports, and future ops.",
+      href: "#overview-section",
+      label: "Open command board"
+    },
+    {
+      title: "General Files",
+      copy: "Open the imported receipts and dropped assets section inside the hub.",
+      href: "#resources-section",
+      label: "Browse files"
+    },
+    {
+      title: "Report Mode",
+      copy: "Fast path for mentor notes, commendations, and conduct follow-up.",
+      href: "#report-section",
+      label: "Open reports"
+    }
+  ];
+  const TEAM_MODULE_CARDS = [
+    {
+      title: "Roster + Accounts",
+      copy: "Every student and mentor should have a persistent team profile with room, subteam, notes, and links."
+    },
+    {
+      title: "Build Season Ops",
+      copy: "Task boards, blocker tracking, deadlines, and subsystem ownership belong here."
+    },
+    {
+      title: "Competition Command",
+      copy: "Pit jobs, inspection, travel docs, packing lists, awards, and match-day coordination."
+    },
+    {
+      title: "Attendance + Commitment",
+      copy: "Practice presence, travel readiness, and late/missing follow-up should become one clean view."
+    },
+    {
+      title: "Scouting + Strategy",
+      copy: "Match scouting, pit scouting, team notes, and pick-list prep should plug into the same home screen."
+    },
+    {
+      title: "Documents + Training",
+      copy: "Build guides, onboarding docs, CAD standards, safety files, and handbooks need one obvious home."
+    }
+  ];
+  const DOC_MODULE_CARDS = [
+    {
+      title: "Drive Hub",
+      copy: "When Drive access is connected, this section should surface handbooks, meeting notes, sheets, and presentations."
+    },
+    {
+      title: "Onboarding Pack",
+      copy: "New members should be able to find expectations, schedules, safety basics, and subteam intros in one tap."
+    },
+    {
+      title: "Competition Docs",
+      copy: "Travel forms, room lists, event schedules, inspection sheets, and pit checklists belong together."
+    },
+    {
+      title: "Mentor Lane",
+      copy: "Private docs, review notes, and leadership materials can live behind a future permission wall."
+    }
+  ];
 
-function buildInventoryFromSheetRows(rows) {
-  const seenTags = new Set();
-  return rows.map((row) => ({
-    id: normalizeTag(getSheetRowValue(row, ["tag", "Asset tag"], "")),
-    material: String(getSheetRowValue(row, ["filamentType", "Filament type"], "Unknown")).toUpperCase(),
-    finish: getSheetRowValue(row, ["specifics", "Specifics (if neccessary)"], "Unknown"),
-    brand: getSheetRowValue(row, ["brand", "Brand"], "Unknown"),
-    sealed: normalizeSealStatus(getSheetRowValue(row, ["sealed", "Sealed"], "Unknown")),
-    location: getSheetRowValue(row, ["location", "Location", "Location "], "Unknown"),
-    amount: parseSheetAmount(getSheetRowValue(row, ["amountRemaining", "Amount remaining (approximate)"], 0)),
-    reorderThreshold: defaultThresholdFor(getSheetRowValue(row, ["filamentType", "Filament type"], "Unknown")),
-    restock: getSheetRowValue(row, ["orderAgain", "Order again"], "Unknown"),
-    notes: getSheetRowValue(row, ["comments", "Comments"], ""),
-    color: getSheetRowValue(row, ["color", "Color"], "Unknown"),
-    colorFamily: colorFamilyFor(getSheetRowValue(row, ["color", "Color"], "Unknown")),
-    position: ""
-  })).filter((item) => {
-    if (!item.id || seenTags.has(item.id)) return false;
-    seenTags.add(item.id);
-    return true;
-  });
-}
+  const refs = {
+    heroStatGrid: document.querySelector("#hero-stat-grid"),
+    searchInput: document.querySelector("#search-input"),
+    roomFilter: document.querySelector("#room-filter"),
+    roleFilter: document.querySelector("#role-filter"),
+    categoryFilter: document.querySelector("#category-filter"),
+    sortFilter: document.querySelector("#sort-filter"),
+    leaderboardList: document.querySelector("#leaderboard-list"),
+    roomGrid: document.querySelector("#room-grid"),
+    categoryGrid: document.querySelector("#category-grid"),
+    agentGrid: document.querySelector("#agent-grid"),
+    agentGridCopy: document.querySelector("#agent-grid-copy"),
+    dossierPanel: document.querySelector("#dossier-panel"),
+    evidenceList: document.querySelector("#evidence-list"),
+    evidenceCopy: document.querySelector("#evidence-copy"),
+    rewardGrid: document.querySelector("#reward-grid"),
+    quickLinkGrid: document.querySelector("#quick-link-grid"),
+    teamModuleGrid: document.querySelector("#team-module-grid"),
+    directoryGrid: document.querySelector("#directory-grid"),
+    resourceLibrary: document.querySelector("#resource-library"),
+    docModuleGrid: document.querySelector("#doc-module-grid"),
+    reportForm: document.querySelector("#report-form"),
+    reportTarget: document.querySelector("#report-target"),
+    reportReporter: document.querySelector("#report-reporter"),
+    reportType: document.querySelector("#report-type"),
+    reportDelta: document.querySelector("#report-delta"),
+    reportSummary: document.querySelector("#report-summary"),
+    reportStatus: document.querySelector("#report-status"),
+    manualFeed: document.querySelector("#manual-feed"),
+    capabilityList: document.querySelector("#capability-list"),
+    futureModuleList: document.querySelector("#future-module-list"),
+    integrationList: document.querySelector("#integration-list")
+  };
 
-function loadInventory() {
-  const defaults = Array.isArray(window.DEFAULT_INVENTORY) ? window.DEFAULT_INVENTORY : [];
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) throw new Error("no saved");
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) throw new Error("bad saved");
-    const mergedDefaults = defaults.map((item) => {
-      const normalizedId = normalizeTag(item.id);
-      const match = parsed.find((savedItem) => normalizeTag(savedItem.id) === normalizedId);
-      const merged = match ? { ...item, ...match, id: normalizedId } : { ...item, id: normalizedId };
-      return { ...merged, reorderThreshold: merged.reorderThreshold ?? defaultThresholdFor(merged.material), colorFamily: merged.colorFamily || colorFamilyFor(merged.color), position: merged.position || "" };
+  const localState = loadLocalState();
+  const dataset = normalizeData(rawData);
+  const importedReceiptCount = dataset.members.filter((member) => member.sourceFolder).length;
+  const state = {
+    search: "",
+    room: "All",
+    role: "All",
+    category: "All",
+    sort: "score",
+    selectedMemberId:
+      dataset.members.find((member) => member.messageCount > 0)?.id ||
+      dataset.members[0]?.id ||
+      "",
+    revealedEvidenceIds: new Set(),
+    local: localState
+  };
+
+  bindEvents();
+  populateStaticControls();
+  renderAll();
+
+  function bindEvents() {
+    refs.searchInput?.addEventListener("input", (event) => {
+      state.search = event.target.value.trim().toLowerCase();
+      renderAll();
     });
-    const extraSaved = parsed
-      .filter((savedItem) => !mergedDefaults.some((item) => normalizeTag(item.id) === normalizeTag(savedItem.id)))
-      .map((item) => ({
-        ...item,
-        id: normalizeTag(item.id),
-        reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material),
-        colorFamily: item.colorFamily || colorFamilyFor(item.color),
-        position: item.position || ""
-      }));
-    return [...mergedDefaults, ...extraSaved].sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
-  } catch {
-    return defaults.map((item) => ({ ...item, id: normalizeTag(item.id), reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material), colorFamily: item.colorFamily || colorFamilyFor(item.color), position: item.position || "" }));
-  }
-}
 
-function saveInventory() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.inventory)); } catch {} }
-function loadLocalComments() { try { return JSON.parse(localStorage.getItem(LOCAL_COMMENTS_KEY) || "[]"); } catch { return []; } }
-function saveLocalComments(comments) { try { localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(comments)); } catch {} }
-function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, JSON.stringify(state.reactions)); } catch {} }
-function registerPendingSheetWrite(item) {
-  if (!item?.id) return;
-  state.pendingSheetWrites[item.id] = {
-    startedAt: Date.now(),
-    snapshot: {
-      amount: clampAmount(item.amount),
-      sealed: normalizeSealStatus(item.sealed),
-      location: item.location || "",
-      restock: item.restock || "Unknown",
-      notes: item.notes || "",
-      color: item.color || "",
-      material: item.material || "",
-      finish: item.finish || "",
-      brand: item.brand || ""
-    }
-  };
-}
-function clearPendingSheetWrite(id) {
-  if (!id) return;
-  delete state.pendingSheetWrites[id];
-}
-function getPendingSheetWrite(id) {
-  const pending = state.pendingSheetWrites[id];
-  if (!pending) return null;
-  if (Date.now() - Number(pending.startedAt || 0) > 15000) {
-    clearPendingSheetWrite(id);
-    return null;
-  }
-  return pending;
-}
-function sheetItemMatchesPending(sheetItem, pendingSnapshot) {
-  if (!sheetItem || !pendingSnapshot) return false;
-  return clampAmount(sheetItem.amount) === clampAmount(pendingSnapshot.amount)
-    && normalizeSealStatus(sheetItem.sealed) === normalizeSealStatus(pendingSnapshot.sealed)
-    && String(sheetItem.location || "") === String(pendingSnapshot.location || "")
-    && String(sheetItem.restock || "Unknown") === String(pendingSnapshot.restock || "Unknown")
-    && String(sheetItem.notes || "") === String(pendingSnapshot.notes || "");
-}
-function mergeInventoryWithSaved(sheetInventory) {
-  if (!Array.isArray(sheetInventory) || !sheetInventory.length) return false;
-  const saved = loadInventory();
-  const merged = sheetInventory.map((item) => {
-    const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
-    const pending = getPendingSheetWrite(item.id);
-    const baseItem = match
-      ? {
-          ...item,
-          reorderThreshold: match.reorderThreshold ?? item.reorderThreshold,
-          position: match.position || item.position || ""
-        }
-      : item;
-    if (!pending) return baseItem;
-    if (sheetItemMatchesPending(baseItem, pending.snapshot)) {
-      clearPendingSheetWrite(item.id);
-      return baseItem;
-    }
-    return {
-      ...baseItem,
-      amount: pending.snapshot.amount,
-      sealed: pending.snapshot.sealed,
-      location: pending.snapshot.location,
-      restock: pending.snapshot.restock,
-      notes: pending.snapshot.notes,
-      color: pending.snapshot.color,
-      material: pending.snapshot.material,
-      finish: pending.snapshot.finish,
-      brand: pending.snapshot.brand
-    };
-  });
-  state.inventory = merged;
-  saveInventory();
-  return true;
-}
-
-async function loadInventoryFromGoogleSheet() {
-  if (!config.googleSheetCsvUrl && !config.googleSheetAppsScriptUrl) return false;
-  try {
-    if (config.googleSheetAppsScriptUrl) {
-      const scriptRows = await fetchSheetRowsFromAppsScript();
-      if (scriptRows?.length) {
-        const sheetInventory = buildInventoryFromSheetRows(scriptRows);
-        if (mergeInventoryWithSaved(sheetInventory)) {
-          state.dataSourceLabel = "Google Sheet live";
-          return true;
-        }
-      }
-    }
-    const sheetUrl = new URL(config.googleSheetCsvUrl);
-    sheetUrl.searchParams.set("_ts", String(Date.now()));
-    const response = await fetch(sheetUrl.toString(), { cache: "no-store" });
-    if (!response.ok) return false;
-    const csvText = await response.text();
-    const sheetInventory = buildInventoryFromSheetCsv(csvText);
-    if (!sheetInventory.length) return false;
-    if (!mergeInventoryWithSaved(sheetInventory)) return false;
-    state.dataSourceLabel = "Google Sheet live";
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fetchSheetRowsFromAppsScript() {
-  if (!config.googleSheetAppsScriptUrl) return null;
-  try {
-    const readUrl = new URL(config.googleSheetAppsScriptUrl);
-    readUrl.searchParams.set("action", "read");
-    readUrl.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
-    readUrl.searchParams.set("_ts", String(Date.now()));
-    const scriptResponse = await fetch(readUrl.toString(), { cache: "no-store" });
-    if (!scriptResponse.ok) return null;
-    const scriptData = await scriptResponse.json();
-    if (!scriptData?.ok || !Array.isArray(scriptData.rows)) return null;
-    return scriptData.rows;
-  } catch {
-    return null;
-  }
-}
-
-function amountForSheet(value) {
-  const amount = clampAmount(value);
-  if (amount < 0.3) return "low";
-  return `${Math.round(amount * 100)}%`;
-}
-
-function buildSheetPayload(item) {
-  return {
-        tag: normalizeTag(item.id),
-    filamentType: item.material,
-    specifics: item.finish,
-    brand: item.brand,
-    sealed: normalizeSealStatus(item.sealed),
-    location: item.location,
-    amountRemaining: amountForSheet(item.amount),
-    orderAgain: item.restock || "Unknown",
-    comments: item.notes || "",
-    color: item.color
-  };
-}
-
-async function sendSheetUpsertRequest(item, mode = "upsert") {
-  if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
-  const sheetPayload = buildSheetPayload(item);
-  try {
-    const url = new URL(config.googleSheetAppsScriptUrl);
-    url.searchParams.set("action", mode);
-    url.searchParams.set("secret", config.googleSheetSharedSecret || "");
-    url.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
-    if (mode === "delete") {
-      url.searchParams.set("tag", String(sheetPayload.tag ?? ""));
-    } else {
-      Object.entries(sheetPayload).forEach(([key, value]) => {
-        url.searchParams.set(key, String(value ?? ""));
-      });
-    }
-    const response = await fetch(url.toString(), { cache: "no-store" });
-    if (response.ok) {
-      const payload = await response.json().catch(() => null);
-      if (payload?.ok) return true;
-    }
-  } catch {}
-
-  try {
-    const response = await fetch(config.googleSheetAppsScriptUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: mode,
-        secret: config.googleSheetSharedSecret || "",
-        sheetName: config.googleSheetName || "Sheet1",
-        item: { tag: sheetPayload.tag, ...(mode === "delete" ? {} : sheetPayload) }
-      })
+    refs.roomFilter?.addEventListener("change", (event) => {
+      state.room = event.target.value;
+      renderAll();
     });
-    if (!response.ok) return false;
-    const payload = await response.json().catch(() => null);
-    return Boolean(payload?.ok);
-  } catch {
-    return false;
-  }
-}
 
-async function verifySheetWrite(item, attempts = 4) {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (attempt > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    }
-    const rows = await fetchSheetRowsFromAppsScript();
-    if (!rows?.length) continue;
-    const sheetItem = buildInventoryFromSheetRows(rows).find((entry) => normalizeTag(entry.id) === normalizeTag(item.id));
-    if (!sheetItem) continue;
-    if (
-      clampAmount(sheetItem.amount) === clampAmount(item.amount)
-      && normalizeSealStatus(sheetItem.sealed) === normalizeSealStatus(item.sealed)
-      && String(sheetItem.location || "") === String(item.location || "")
-      && String(sheetItem.restock || "Unknown") === String(item.restock || "Unknown")
-      && String(sheetItem.notes || "") === String(item.notes || "")
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-async function verifySheetDelete(itemId, attempts = 4) {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (attempt > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    }
-    const rows = await fetchSheetRowsFromAppsScript();
-    if (!rows?.length) continue;
-    const exists = buildInventoryFromSheetRows(rows).some((entry) => normalizeTag(entry.id) === normalizeTag(itemId));
-    if (!exists) return true;
-  }
-  return false;
-}
-  
-async function syncItemToGoogleSheet(item, mode = "upsert") {
-  if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
-  const wrote = await sendSheetUpsertRequest(item, mode);
-  if (!wrote) return false;
-  if (mode === "delete") return verifySheetDelete(item.id);
-  return verifySheetWrite(item);
-}
-  
-async function syncItemAndRefresh(item, mode = "upsert") {
-  registerPendingSheetWrite(item);
-  const synced = await syncItemToGoogleSheet(item, mode);
-  if (!synced) {
-    clearPendingSheetWrite(item?.id);
-    await loadInventoryFromGoogleSheet();
-    renderAll();
-    return false;
-  }
-  const previousSelected = state.selectedId;
-  await new Promise((resolve) => window.setTimeout(resolve, 1200));
-  const loaded = await loadInventoryFromGoogleSheet();
-  if (loaded && previousSelected) state.selectedId = previousSelected;
-  renderAll();
-  return true;
-}
+    refs.roleFilter?.addEventListener("change", (event) => {
+      state.role = event.target.value;
+      renderAll();
+    });
 
-function isBelowThreshold(item) { return Number(item.amount) <= Number(item.reorderThreshold || defaultThresholdFor(item.material)); }
-function swatchFor(color) { const stops = colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; return `linear-gradient(135deg, ${stops.join(", ")})`; }
-function colorStopsFor(color) { return colorThemes[normalize(color)] || ["#f1d3af", "#af8358"]; }
-function nameStyleFor(color) {
-  const key = normalize(color);
-  const gradient = swatchFor(color);
-  const darkTheme = state.theme === "dark";
-  const needsContrast = ["white", "silver", "glow"].includes(key) || darkTheme;
-  const stroke = darkTheme ? "1.2px rgba(0,0,0,0.72)" : needsContrast ? "0.8px rgba(23,23,23,0.28)" : "0 transparent";
-  const shadow = darkTheme ? "0 1px 0 rgba(255,255,255,0.08)" : needsContrast ? "0 1px 0 rgba(255,255,255,0.55)" : "none";
-  return `--name-gradient:${gradient};--name-stroke:${stroke};--name-shadow:${shadow};`;
-}
-function getAvailability(item) { if (isBelowThreshold(item)) return { label: "Below reorder threshold", tone: "low" }; if (item.amount >= 0.95) return { label: "Factory fresh", tone: "good" }; if (item.amount >= 0.5) return { label: "Ready for print", tone: "good" }; if (item.amount >= 0.25) return { label: "Watch inventory", tone: "warn" }; if (item.amount > 0) return { label: "Low stock", tone: "low" }; return { label: "Empty spool", tone: "low" }; }
-function getReactionCounts(id) { return state.reactions[id] || { likes: 0, favorites: 0 }; }
-function getMaterials() { return ["All", ...new Set(state.inventory.map((item) => item.material).sort())]; }
-function getLocations() { return ["All", ...new Set(state.inventory.map((item) => item.location).sort())]; }
-function getSealChoices() {
-  const preferred = ["in a bag", "No", "unopened"];
-  const all = [...preferred, ...state.inventory.map((item) => normalizeSealStatus(item.sealed)).filter(Boolean)];
-  const deduped = [];
-  const seen = new Set();
-  all.forEach((status) => {
-    const key = normalize(status);
-    if (!seen.has(key)) {
-      seen.add(key);
-      deduped.push(status);
-    }
-  });
-  return deduped;
-}
-function getLocationChoices() {
-  return Array.from(new Set([
-    "Printer",
-    ...printers.map((printer) => printer.name),
-    ...state.inventory.map((item) => item.location).filter(Boolean)
-  ])).sort((a, b) => a.localeCompare(b));
-}
-function getFamilies() { return ["All", ...new Set(state.inventory.map((item) => item.colorFamily || colorFamilyFor(item.color)).sort())]; }
-function getModes() { return ["All", "Low stock", "Ready to print", "Favorites", "Most liked"]; }
-function firstLoadedSlot(printer) {
-  return printer.slots.find((slot) => slot.filament && slot.filament !== "Empty") || null;
-}
-function bestInventoryMatchForPrinterSlot(slot) {
-  if (!slot || !slot.filament || slot.filament === "Empty") return null;
-  return state.inventory
-    .filter((item) => normalize(item.material) === normalize(slot.filament) && (!slot.color || normalize(slot.color) === "unknown" || normalize(item.color) === normalize(slot.color)))
-    .sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id))[0] || null;
-}
-function getLowestStockItems() {
-  return [...state.inventory]
-    .filter((item) => item.amount < 0.3)
-    .sort((a, b) => a.amount - b.amount || Number(a.id) - Number(b.id))
-    .slice(0, 4);
-}
-function getReorderQueueItems() {
-  return [...state.inventory]
-    .filter((item) => isBelowThreshold(item))
-    .sort((a, b) => a.amount - b.amount || Number(a.id) - Number(b.id))
-    .slice(0, 8);
-}
-function getPrinterLoadedInventory() {
-  return state.inventory.filter((item) => locationBucketFor(item.location) === "In printer");
-}
-function updateStationStatus(message) {
-  if (els.stationScanStatus) els.stationScanStatus.textContent = message;
-}
-function getSelectedStationItem() {
-  return state.inventory.find((entry) => entry.id === state.selectedId) || null;
-}
-function setItemAmount(item, nextAmount) {
-  if (!item) return;
-  item.amount = clampAmount(nextAmount);
-  saveInventory();
-  void syncItemAndRefresh(item, "upsert");
-  renderAll();
-}
-function setItemPlacement(item, nextLocation, nextPosition = "") {
-  if (!item) return;
-  item.location = nextLocation || item.location;
-  item.position = String(nextPosition || "").trim();
-  saveInventory();
-  void syncItemAndRefresh(item, "upsert");
-  renderAll();
-}
-function openAddFilamentForScannedTag(tag) {
-  if (!state.adminMode) {
-    updateStationStatus(`Tag ${tag} is not in the tracker yet. Turn on admin mode to create it quickly.`);
-    return;
-  }
-  openAddFilamentModal();
-  if (els.newTag) els.newTag.value = tag;
-  if (els.newLocation) els.newLocation.value = "Cabinet 1 Misc.";
-  if (els.newPosition) els.newPosition.value = "";
-  updateStationStatus(`Tag ${tag} was not found. Fill in the new filament form.`);
-}
-function handleStationScan(rawValue) {
-  const tag = parseScannedTag(rawValue);
-  if (!tag) {
-    updateStationStatus("No filament tag was found in that scan.");
-    return false;
-  }
-  const found = selectSpoolByTag(tag);
-  if (found) {
-    updateStationStatus(`Opened spool tag ${tag}. Choose a quick action below.`);
-    return true;
-  }
-  openAddFilamentForScannedTag(tag);
-  return false;
-}
-function renderStationActions() {
-  if (!els.stationActionsPanel || !els.stationSelectedSummary || !els.printerShortcutGrid) return;
-  const item = getSelectedStationItem();
-  if (!item) {
-    els.stationSelectedSummary.textContent = "Choose or scan a spool";
-    els.printerShortcutGrid.innerHTML = "";
-    return;
-  }
-  els.stationSelectedSummary.textContent = `Tag ${item.id} • ${item.color} ${item.material}`;
-  els.printerShortcutGrid.innerHTML = printers.map((printer) => {
-    const slotButtons = ["A1", "A2", "A3", "A4", "Ext"].map((slot) => {
-      const label = slot === "Ext" ? `${printer.name} Ext` : `${printer.name} ${slot}`;
-      return `<button class="filter-pill" type="button" data-station-assign="${printer.id}|${slot}">${label}</button>`;
-    }).join("");
-    return `<div class="station-printer-group"><strong>${printer.name}</strong><div class="quick-action-grid">${slotButtons}</div></div>`;
-  }).join("");
-}
-function applyStationAction(action) {
-  const item = getSelectedStationItem();
-  if (!item) {
-    updateStationStatus("Scan or choose a spool first.");
-    return;
-  }
-  if (action === "used-some") {
-    setItemAmount(item, Math.round((item.amount - 0.1) * 10) / 10);
-    updateStationStatus(`Marked tag ${item.id} as used some.`);
-    return;
-  }
-  if (action === "used-lot") {
-    setItemAmount(item, Math.round((item.amount - 0.3) * 10) / 10);
-    updateStationStatus(`Marked tag ${item.id} as used a lot.`);
-    return;
-  }
-  if (action === "mark-low") {
-    setItemAmount(item, 0.2);
-    updateStationStatus(`Marked tag ${item.id} as low.`);
-    return;
-  }
-  if (action === "mark-empty") {
-    setItemAmount(item, 0);
-    updateStationStatus(`Marked tag ${item.id} as empty.`);
-    return;
-  }
-  if (action === "return-shelf") {
-    const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location) || "Cabinet 1 Misc.";
-    setItemPlacement(item, shelfChoice, "");
-    updateStationStatus(`Returned tag ${item.id} to shelf.`);
-  }
-}
-function assignSelectedToPrinterSlot(printerId, slot) {
-  const item = getSelectedStationItem();
-  if (!item) {
-    updateStationStatus("Scan or choose a spool first.");
-    return;
-  }
-  const printer = printers.find((entry) => entry.id === printerId);
-  if (!printer) return;
-  if (slot === "Ext") {
-    setItemPlacement(item, printer.name, "External spool");
-    updateStationStatus(`Loaded tag ${item.id} onto ${printer.name} external spool.`);
-    return;
-  }
-  setItemPlacement(item, printer.name, `AMS ${slot}`);
-  updateStationStatus(`Loaded tag ${item.id} onto ${printer.name} ${slot}.`);
-}
-function parseScannedTag(rawValue) {
-  const raw = String(rawValue || "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    const tag = url.searchParams.get("tag");
-    if (tag) return normalizeTag(tag);
-  } catch {}
-  const tagMatch = raw.match(/(?:tag=|tag\s*)(\d+(?:\.\d+)?)/i);
-  if (tagMatch) return normalizeTag(tagMatch[1]);
-  const numberMatch = raw.match(/\d+(?:\.\d+)?/);
-  return numberMatch ? normalizeTag(numberMatch[0]) : "";
-}
-function selectSpoolByTag(tag) {
-  const normalizedTag = normalizeTag(tag);
-  if (!normalizedTag) return false;
-  const item = state.inventory.find((entry) => normalizeTag(entry.id) === normalizedTag);
-  if (!item) return false;
-  state.selectedId = item.id;
-  renderAll();
-  focusDetailPanelIfStacked();
-  return true;
-}
-function updateScanStatus(message) {
-  if (els.scanStatus) els.scanStatus.textContent = message;
-}
-function stopQrScanner() {
-  if (state.scannerLoopId) {
-    window.cancelAnimationFrame(state.scannerLoopId);
-    state.scannerLoopId = 0;
-  }
-  if (state.scannerStream) {
-    state.scannerStream.getTracks().forEach((track) => track.stop());
-    state.scannerStream = null;
-  }
-  if (els.scannerVideo) {
-    els.scannerVideo.pause();
-    els.scannerVideo.srcObject = null;
-  }
-  if (els.scannerFrame) els.scannerFrame.hidden = true;
-  state.scannerActive = false;
-  if (els.startScanButton) els.startScanButton.textContent = "Start camera scanner";
-}
-function focusDetailPanelIfStacked() {
-  if (window.innerWidth > 1100) return;
-  const detailPanel = document.getElementById("detail-panel");
-  if (!detailPanel) return;
-  window.setTimeout(() => {
-    detailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, 60);
-}
-async function handleScannedValue(rawValue) {
-  const tag = parseScannedTag(rawValue);
-  if (!tag) {
-    updateScanStatus("QR scanned, but no spool tag was found in it.");
-    return false;
-  }
-  const ok = selectSpoolByTag(tag);
-  updateScanStatus(ok ? `Opened spool tag ${tag}.` : `Scanned tag ${tag}, but it is not in the tracker yet.`);
-  if (ok) stopQrScanner();
-  return ok;
-}
-async function scanFrameLoop() {
-  if (!state.scannerActive || !state.scannerDetector || !els.scannerVideo) return;
-  try {
-    const detections = await state.scannerDetector.detect(els.scannerVideo);
-    if (detections?.length) {
-      const rawValue = detections[0].rawValue || "";
-      if (rawValue) {
-        await handleScannedValue(rawValue);
+    refs.categoryFilter?.addEventListener("change", (event) => {
+      state.category = event.target.value;
+      renderAll();
+    });
+
+    refs.sortFilter?.addEventListener("change", (event) => {
+      state.sort = event.target.value;
+      renderAll();
+    });
+
+    refs.agentGrid?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-member-id]");
+      if (!card) {
         return;
       }
+
+      state.selectedMemberId = card.dataset.memberId || "";
+      renderAll();
+    });
+
+    refs.dossierPanel?.addEventListener("click", (event) => {
+      const actionButton = event.target.closest("[data-quick-action]");
+      if (!actionButton) {
+        return;
+      }
+
+      const memberId = actionButton.dataset.memberId;
+      const actionIndex = Number(actionButton.dataset.quickAction);
+      const action = QUICK_ACTIONS[actionIndex];
+
+      if (!memberId || !action) {
+        return;
+      }
+
+      addLocalReport({
+        memberId,
+        reporter: "Quick Action",
+        type: action.type,
+        delta: action.delta,
+        summary: action.summary
+      });
+
+      refs.reportStatus.textContent =
+        "Quick action logged for " + getMemberById(memberId)?.name + ".";
+      renderAll();
+    });
+
+    refs.evidenceList?.addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-toggle-evidence]");
+      if (!toggle) {
+        return;
+      }
+
+      const evidenceId = toggle.dataset.toggleEvidence;
+      if (!evidenceId) {
+        return;
+      }
+
+      if (state.revealedEvidenceIds.has(evidenceId)) {
+        state.revealedEvidenceIds.delete(evidenceId);
+      } else {
+        state.revealedEvidenceIds.add(evidenceId);
+      }
+
+      renderEvidence(getViewModel());
+    });
+
+    refs.manualFeed?.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-remove-report]");
+      if (!removeButton) {
+        return;
+      }
+
+      const reportId = removeButton.dataset.removeReport;
+      if (!reportId) {
+        return;
+      }
+
+      state.local.reports = state.local.reports.filter((report) => report.id !== reportId);
+      persistLocalState();
+      refs.reportStatus.textContent = "Local report removed.";
+      renderAll();
+    });
+
+    refs.reportForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const memberId = refs.reportTarget.value;
+      const reporter = refs.reportReporter.value.trim() || "Anonymous lead";
+      const type = refs.reportType.value;
+      const delta = Number(refs.reportDelta.value);
+      const summary = refs.reportSummary.value.trim();
+
+      if (!memberId || !summary) {
+        refs.reportStatus.textContent = "Choose a target and write a short summary first.";
+        return;
+      }
+
+      addLocalReport({
+        memberId,
+        reporter,
+        type,
+        delta,
+        summary
+      });
+
+      refs.reportSummary.value = "";
+      refs.reportReporter.value = "";
+      refs.reportStatus.textContent = "Local report saved for " + getMemberById(memberId)?.name + ".";
+      renderAll();
+    });
+  }
+
+  function populateStaticControls() {
+    const rooms = dataset.rooms;
+    const categories = dataset.categoryOptions;
+
+    refs.roomFilter.innerHTML = [
+      '<option value="All">All rooms</option>',
+      ...rooms.map((room) => `<option value="${escapeAttribute(room)}">Room ${escapeHtml(room)}</option>`)
+    ].join("");
+
+    refs.categoryFilter.innerHTML = [
+      '<option value="All">All evidence</option>',
+      ...categories.map(
+        (category) => `<option value="${escapeAttribute(category)}">${escapeHtml(category)}</option>`
+      )
+    ].join("");
+
+    refs.reportTarget.innerHTML = dataset.members
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(
+        (member) =>
+          `<option value="${escapeAttribute(member.id)}">${escapeHtml(
+            member.name
+          )} | Room ${escapeHtml(member.room)}</option>`
+      )
+      .join("");
+  }
+
+  function renderAll() {
+    const viewModel = getViewModel();
+    renderHeroStats(viewModel);
+    renderQuickLinks();
+    renderTeamModules();
+    renderLeaderboard(viewModel);
+    renderRooms(viewModel);
+    renderCategories(viewModel);
+    renderAgents(viewModel);
+    renderDossier(viewModel);
+    renderEvidence(viewModel);
+    renderRewards();
+    renderDirectory(viewModel);
+    renderResourceLibrary();
+    renderManualFeed(viewModel);
+    renderModuleCards(refs.capabilityList, CAPABILITY_CARDS);
+    renderModuleCards(refs.futureModuleList, FUTURE_MODULE_CARDS);
+    renderModuleCards(refs.integrationList, INTEGRATION_CARDS);
+    renderDocModules();
+  }
+
+  function getViewModel() {
+    const members = dataset.members.map((member) => enhanceMember(member));
+    const memberMap = new Map(members.map((member) => [member.id, member]));
+    const filteredMembers = members
+      .filter((member) => passesFilters(member))
+      .sort(sortMembers);
+
+    if (!filteredMembers.find((member) => member.id === state.selectedMemberId)) {
+      state.selectedMemberId = filteredMembers[0]?.id || members[0]?.id || "";
     }
-  } catch {}
-  state.scannerLoopId = window.requestAnimationFrame(() => { void scanFrameLoop(); });
-}
-async function startQrScanner() {
-  if (state.scannerActive) {
-    stopQrScanner();
-    updateScanStatus("Camera scanner stopped.");
-    return;
+
+    const selectedMember = memberMap.get(state.selectedMemberId) || filteredMembers[0] || null;
+    const leaderboard = members
+      .filter((member) => member.role === "Student")
+      .sort(sortMembersByScore)
+      .slice(0, 8);
+    const combinedEvidence = buildCombinedEvidence(memberMap);
+    const filteredEvidence = combinedEvidence.filter((item) =>
+      passesEvidenceFilters(item, selectedMember)
+    );
+
+    return {
+      members,
+      filteredMembers,
+      selectedMember,
+      leaderboard,
+      combinedEvidence,
+      filteredEvidence,
+      memberMap
+    };
   }
-  if (!("BarcodeDetector" in window)) {
-    if (els.scanUploadInput) {
-      updateScanStatus("This browser will use the phone camera upload flow instead of live QR detection.");
-      els.scanUploadInput.click();
-    } else {
-      updateScanStatus("This browser does not support live camera QR scanning. Use Scan from image instead.");
-    }
-    return;
+
+  function renderHeroStats(viewModel) {
+    const localReportCount = state.local.reports.length;
+    const flaggedMembers = viewModel.members.filter((member) => member.flaggedCount > 0).length;
+    const roomCoverage = importedReceiptCount + " / " + dataset.members.length;
+    const statCards = [
+      {
+        label: "Roster Size",
+        value: dataset.members.length,
+        note: "students + mentors in one hub"
+      },
+      {
+        label: "Receipt Coverage",
+        value: roomCoverage,
+        note: "members with imported Discord data"
+      },
+      {
+        label: "Flagged Members",
+        value: flaggedMembers,
+        note: "people with at least one flagged receipt"
+      },
+      {
+        label: "Local Reports",
+        value: localReportCount,
+        note: "browser-side notes and score changes"
+      }
+    ];
+
+    refs.heroStatGrid.innerHTML = statCards
+      .map(
+        (card) => `
+          <article class="hero-stat-card">
+            <span>${escapeHtml(card.label)}</span>
+            <strong>${escapeHtml(String(card.value))}</strong>
+            <small>${escapeHtml(card.note)}</small>
+          </article>
+        `
+      )
+      .join("");
   }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    updateScanStatus("This browser cannot open a live camera stream here. Use Scan from image instead.");
-    return;
+
+  function renderQuickLinks() {
+    refs.quickLinkGrid.innerHTML = QUICK_LINK_CARDS.map(
+      (card) => `
+        <article class="module-card quick-link-card">
+          <strong>${escapeHtml(card.title)}</strong>
+          <p>${escapeHtml(card.copy)}</p>
+          <a class="primary-button" href="${escapeAttribute(card.href)}" ${
+        card.href.startsWith("http") ? 'target="_blank" rel="noreferrer"' : ""
+      }>${escapeHtml(card.label)}</a>
+        </article>
+      `
+    ).join("");
   }
-  try {
-    state.scannerDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-    state.scannerStream = stream;
-    state.scannerActive = true;
-    if (els.scannerVideo) {
-      els.scannerVideo.srcObject = stream;
-      await els.scannerVideo.play();
-    }
-    if (els.scannerFrame) els.scannerFrame.hidden = false;
-    if (els.startScanButton) els.startScanButton.textContent = "Stop camera scanner";
-    updateScanStatus("Camera is live. Point it at a spool QR code.");
-    void scanFrameLoop();
-  } catch {
-    stopQrScanner();
-    updateScanStatus("Camera access was blocked or unavailable. Try Scan from image instead.");
+
+  function renderTeamModules() {
+    refs.teamModuleGrid.innerHTML = TEAM_MODULE_CARDS.map(
+      (card) => `
+        <article class="module-card">
+          <strong>${escapeHtml(card.title)}</strong>
+          <p>${escapeHtml(card.copy)}</p>
+        </article>
+      `
+    ).join("");
   }
-}
-async function scanQrFromImage(file) {
-  if (!file) return;
-  if (!("BarcodeDetector" in window)) {
-    updateScanStatus("This browser can open the camera, but it cannot decode QR images automatically here. Use the normal camera app if this phone does not scan from the picker.");
-    return;
+
+  function renderLeaderboard(viewModel) {
+    refs.leaderboardList.innerHTML = viewModel.leaderboard
+      .map((member, index) => {
+        const deltaLabel =
+          member.localDelta === 0 ? "No local delta" : withSign(member.localDelta) + " local delta";
+        return `
+          <button class="ranking-card" type="button" data-member-id="${escapeAttribute(member.id)}">
+            <div class="rank-top">
+              <strong>#${index + 1} ${escapeHtml(member.name)}</strong>
+              <span class="score-chip ${scoreTone(member.effectiveScore)}">${member.effectiveScore}</span>
+            </div>
+            <p>${escapeHtml(member.codename)} | Room ${escapeHtml(member.room)} | ${escapeHtml(
+          member.specialty
+        )}</p>
+            <div class="rank-bottom">
+              <span class="badge">${escapeHtml(member.conductLabel)}</span>
+              <span class="badge">${escapeHtml(deltaLabel)}</span>
+            </div>
+          </button>
+        `;
+      })
+      .join("");
   }
-  try {
-    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-    const bitmap = await createImageBitmap(file);
-    const detections = await detector.detect(bitmap);
-    if (!detections?.length) {
-      updateScanStatus("No QR code was found in that image.");
+
+  function renderRooms(viewModel) {
+    const roomCards = dataset.rooms.map((room) => {
+      const roomMembers = viewModel.members.filter((member) => member.room === room);
+      const imported = roomMembers.filter((member) => member.messageCount > 0).length;
+      const averageScore = roomMembers.length
+        ? Math.round(
+            roomMembers.reduce((sum, member) => sum + member.effectiveScore, 0) / roomMembers.length
+          )
+        : 0;
+      const flagged = roomMembers.reduce((sum, member) => sum + member.flaggedCount, 0);
+
+      return `
+        <article class="room-card">
+          <div class="room-top">
+            <strong>Room ${escapeHtml(room)}</strong>
+            <span class="score-chip ${scoreTone(averageScore)}">${averageScore}</span>
+          </div>
+          <p>${roomMembers.length} rostered | ${imported} with receipts | ${flagged} flagged signals</p>
+          <div class="badge-row">
+            <span class="badge">${escapeHtml(roomMembers.map((member) => member.lastName).join(", "))}</span>
+          </div>
+        </article>
+      `;
+    });
+
+    refs.roomGrid.innerHTML = roomCards.join("");
+  }
+
+  function renderCategories(viewModel) {
+    const combinedCounts = new Map();
+
+    viewModel.combinedEvidence.forEach((item) => {
+      item.categories.forEach((category) => {
+        combinedCounts.set(category, (combinedCounts.get(category) || 0) + 1);
+      });
+    });
+
+    const cards = Array.from(combinedCounts.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([category, count]) => {
+        const tone = categoryTone(category);
+        const isActive = state.category === category;
+        return `
+          <button class="category-card ${isActive ? "is-active" : ""}" type="button" data-set-category="${escapeAttribute(
+            category
+          )}">
+            <div class="rank-top">
+              <strong>${escapeHtml(category)}</strong>
+              <span class="category-chip ${tone}">${count}</span>
+            </div>
+            <p>${escapeHtml(CATEGORY_HELP[category] || "Imported moderation signal.")}</p>
+          </button>
+        `;
+      });
+
+    refs.categoryGrid.innerHTML = cards.join("");
+    refs.categoryGrid.querySelectorAll("[data-set-category]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.category = button.dataset.setCategory || "All";
+        refs.categoryFilter.value = state.category;
+        renderAll();
+      });
+    });
+  }
+
+  function renderAgents(viewModel) {
+    refs.agentGridCopy.textContent =
+      viewModel.filteredMembers.length +
+      " agents shown. Tap a card to open the dossier and quick controls.";
+
+    if (!viewModel.filteredMembers.length) {
+      refs.agentGrid.innerHTML = emptyState(
+        "No agents match the current filters.",
+        "Try a different room, role, or evidence category."
+      );
       return;
     }
-    await handleScannedValue(detections[0].rawValue || "");
-  } catch {
-    updateScanStatus("That image could not be scanned.");
+
+    refs.agentGrid.innerHTML = viewModel.filteredMembers
+      .map((member) => {
+        const selectedClass = member.id === state.selectedMemberId ? " is-selected" : "";
+        const receiptLabel = member.messageCount
+          ? member.messageCount + " imported messages"
+          : "No receipt export loaded yet";
+
+        return `
+          <button class="agent-card${selectedClass}" type="button" data-member-id="${escapeAttribute(member.id)}">
+            <div class="agent-top">
+              ${renderAvatar(member)}
+              <div>
+                <strong>${escapeHtml(member.name)}</strong>
+                <p>${escapeHtml(member.codename)} | ${escapeHtml(member.role)} | Room ${escapeHtml(
+          member.room
+        )}</p>
+              </div>
+            </div>
+            <div class="badge-row">
+              <span class="score-chip ${scoreTone(member.effectiveScore)}">${member.effectiveScore}</span>
+              <span class="badge">${escapeHtml(member.specialty)}</span>
+              <span class="badge">${escapeHtml(member.conductLabel)}</span>
+            </div>
+            <p>${escapeHtml(receiptLabel)}</p>
+            <div class="agent-bottom">
+              <span class="badge">${escapeHtml(withSign(member.localDelta))} local</span>
+              <span class="badge">${member.flaggedCount} flagged</span>
+            </div>
+          </button>
+        `;
+      })
+      .join("");
   }
-}
-function titleCase(text) { return String(text || "").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()); }
-function colorNameFromHex(hex) {
-  const key = normalize(String(hex || "").replace("#", ""));
-  if (!key) return "";
-  if (key.startsWith("161616") || key.startsWith("000000")) return "Black";
-  if (key.startsWith("ffffff")) return "White";
-  if (key.startsWith("ff0000")) return "Red";
-  if (key.startsWith("00ff00")) return "Green";
-  if (key.startsWith("0000ff")) return "Blue";
-  return titleCase(key);
-}
-function createPrinterClone(printer) {
-  return { ...printer, slots: printer.slots.map((slot) => ({ ...slot })) };
-}
-function getPrinterMatch(deviceId) {
-  const normalized = normalizeDeviceId(deviceId);
-  return printers.find((printer) => normalized && (normalizeDeviceId(printer.deviceId) === normalized || normalized.endsWith(printer.deviceMatch) || normalizeDeviceId(printer.deviceId).endsWith(normalized.slice(-3))));
-}
-function applyBambuSnapshot(snapshot) {
-  printers = defaultPrinters.map((printer) => createPrinterClone(printer));
-  const printerSnapshots = Array.isArray(snapshot?.printers) ? snapshot.printers : [];
-  let connectedPrinters = 0;
-  printerSnapshots.forEach((entry) => {
-    const printer = getPrinterMatch(entry.deviceId);
-    if (!printer) return;
-    connectedPrinters += 1;
-    printer.source = "Bambu Studio local log";
-    printer.lastSyncedAt = entry.capturedAt || snapshot.generatedAt || "";
-    const slotsById = new Map((entry.amsSlots || []).map((slot) => [slot.slotId, slot]));
-    printer.slots = ["A1", "A2", "A3", "A4"].map((slotId) => {
-      const slot = slotsById.get(slotId);
-      if (!slot || slot.status === "empty") return { slot: slotId, filament: "Empty", color: "", k: "" };
+
+  function renderDossier(viewModel) {
+    const member = viewModel.selectedMember;
+
+    if (!member) {
+      refs.dossierPanel.innerHTML = emptyState(
+        "Pick an agent to open the dossier.",
+        "This panel shows score controls, activity, and recent receipts."
+      );
+      return;
+    }
+
+    const recentReceipts = member.messages.slice(0, 6);
+    const localReports = member.localReports.slice(0, 5);
+    const meterWidth = Math.max(8, Math.min(100, ((member.effectiveScore - 300) / 700) * 100));
+    const roles = member.roles.length
+      ? `<div class="badge-row">${member.roles
+          .slice(0, 6)
+          .map((role) => `<span class="badge">${escapeHtml(role)}</span>`)
+          .join("")}</div>`
+      : '<p class="tiny-copy">No Discord role list imported for this person yet.</p>';
+
+    refs.dossierPanel.innerHTML = `
+      <div class="dossier-wrap">
+        <section class="dossier-score">
+          <div class="dossier-score-top">
+            <div class="avatar-row">
+              ${renderAvatar(member)}
+              <div>
+                <strong>${escapeHtml(member.name)}</strong>
+                <p>${escapeHtml(member.codename)} | ${escapeHtml(member.specialty)}</p>
+              </div>
+            </div>
+            <span class="score-chip ${scoreTone(member.effectiveScore)}">${member.conductLabel}</span>
+          </div>
+          <div class="score-value">${member.effectiveScore}</div>
+          <p>${escapeHtml(member.role)} in Room ${escapeHtml(member.room)} | ${member.messageCount} imported messages | ${
+      member.flaggedCount
+    } flagged receipts</p>
+          <div class="score-meter"><span style="width:${meterWidth}%"></span></div>
+          <div class="quick-action-row">
+            ${QUICK_ACTIONS.map(
+              (action, index) => `
+                <button
+                  class="quick-action-button"
+                  type="button"
+                  data-quick-action="${index}"
+                  data-member-id="${escapeAttribute(member.id)}"
+                >
+                  ${escapeHtml(action.label)}
+                </button>
+              `
+            ).join("")}
+          </div>
+        </section>
+
+        <section class="dossier-block">
+          <div class="rank-top">
+            <strong>Intel</strong>
+            <span class="badge">${escapeHtml(member.messageCount ? "Imported" : "No export yet")}</span>
+          </div>
+          <div class="info-list">
+            <p><span class="info-label">Discord</span>${escapeHtml(
+              member.discordDisplay || member.discordUsername || "Not linked yet"
+            )}</p>
+            <p><span class="info-label">Username</span>${escapeHtml(member.discordUsername || "Unknown")}</p>
+            <p><span class="info-label">Joined</span>${escapeHtml(member.joinedServer || "Unknown")}</p>
+            <p><span class="info-label">Source</span>${
+              member.sourceFolder
+                ? `<a href="${escapeAttribute(member.sourceFolder)}" target="_blank" rel="noreferrer">${escapeHtml(
+                    member.sourceFolder
+                  )}</a>`
+                : "No receipt folder loaded"
+            }</p>
+          </div>
+          ${roles}
+        </section>
+
+        <section class="dossier-block">
+          <div class="rank-top">
+            <strong>Snapshot</strong>
+            <span class="badge">${escapeHtml(withSign(member.localDelta))} local delta</span>
+          </div>
+          <div class="mini-stat-grid">
+            <article>
+              <small>Imported messages</small>
+              <strong>${member.messageCount}</strong>
+            </article>
+            <article>
+              <small>Flagged</small>
+              <strong>${member.flaggedCount}</strong>
+            </article>
+            <article>
+              <small>Attachments</small>
+              <strong>${member.attachmentCount}</strong>
+            </article>
+            <article>
+              <small>Last seen</small>
+              <strong>${escapeHtml(formatDate(member.lastSeen))}</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="dossier-block">
+          <div class="rank-top">
+            <strong>Recent Receipts</strong>
+            <span class="badge">${recentReceipts.length}</span>
+          </div>
+          ${
+            recentReceipts.length
+              ? `<div class="receipt-stack">${recentReceipts
+                  .map(
+                    (message) => `
+                      <article class="mini-receipt">
+                        <p>${escapeHtml(message.preview || message.text || "No preview")}</p>
+                        <div class="badge-row">
+                          ${
+                            message.categories.length
+                              ? message.categories
+                                  .map(
+                                    (category) =>
+                                      `<span class="category-chip ${categoryTone(category)}">${escapeHtml(
+                                        category
+                                      )}</span>`
+                                  )
+                                  .join("")
+                              : '<span class="badge">No category</span>'
+                          }
+                          <span class="badge">${escapeHtml(formatDate(message.timestampIso, message.timestampLabel))}</span>
+                        </div>
+                      </article>
+                    `
+                  )
+                  .join("")}</div>`
+              : '<p class="tiny-copy">No imported receipts for this member yet.</p>'
+          }
+        </section>
+
+        <section class="dossier-block">
+          <div class="rank-top">
+            <strong>Local Notes</strong>
+            <span class="badge">${localReports.length}</span>
+          </div>
+          ${
+            localReports.length
+              ? `<div class="receipt-stack">${localReports
+                  .map(
+                    (report) => `
+                      <article class="mini-receipt">
+                        <p>${escapeHtml(report.summary)}</p>
+                        <div class="badge-row">
+                          <span class="score-chip ${scoreTone(member.score + report.delta)}">${withSign(
+                        report.delta
+                      )}</span>
+                          <span class="badge">${escapeHtml(report.typeLabel)}</span>
+                          <span class="badge">${escapeHtml(report.reporter)}</span>
+                        </div>
+                      </article>
+                    `
+                  )
+                  .join("")}</div>`
+              : '<p class="tiny-copy">No local reports stacked on this dossier yet.</p>'
+          }
+        </section>
+      </div>
+    `;
+  }
+
+  function renderEvidence(viewModel) {
+    refs.evidenceCopy.textContent =
+      viewModel.filteredEvidence.length + " evidence items match the current filters.";
+
+    if (!viewModel.filteredEvidence.length) {
+      refs.evidenceList.innerHTML = emptyState(
+        "No evidence items match the current filters.",
+        "Try clearing the category filter or selecting a different member."
+      );
+      return;
+    }
+
+    refs.evidenceList.innerHTML = viewModel.filteredEvidence
+      .slice(0, 50)
+      .map((item) => {
+        const revealRaw = state.revealedEvidenceIds.has(item.id);
+        const canReveal = Boolean(item.rawText && item.rawText !== item.preview);
+        const metaLabel = item.kind === "local" ? "Local report" : "Imported receipt";
+
+        return `
+          <article class="evidence-card">
+            <div class="evidence-top">
+              <div>
+                <strong>${escapeHtml(item.memberName)}</strong>
+                <p>${escapeHtml(metaLabel)} | Room ${escapeHtml(item.room)} | ${escapeHtml(
+          formatDate(item.timestampIso, item.timestampLabel)
+        )}</p>
+              </div>
+              <span class="score-chip ${scoreTone(700 + item.scoreDelta)}">${withSign(item.scoreDelta)}</span>
+            </div>
+            <div class="badge-row">
+              ${item.categories
+                .map(
+                  (category) =>
+                    `<span class="category-chip ${categoryTone(category)}">${escapeHtml(category)}</span>`
+                )
+                .join("")}
+            </div>
+            <p>${escapeHtml(item.preview)}</p>
+            ${
+              item.attachmentNames.length
+                ? `<div class="badge-row">${item.attachmentNames
+                    .map((name) => `<span class="badge">${escapeHtml(name)}</span>`)
+                    .join("")}</div>`
+                : ""
+            }
+            ${
+              canReveal
+                ? `
+                  <button class="toggle-raw-button" type="button" data-toggle-evidence="${escapeAttribute(item.id)}">
+                    ${revealRaw ? "Hide raw receipt" : "Reveal raw receipt"}
+                  </button>
+                  ${revealRaw ? `<pre class="raw-receipt">${escapeHtml(item.rawText)}</pre>` : ""}
+                `
+                : ""
+            }
+            <div class="receipt-links">
+              ${
+                item.sourcePath
+                  ? `<a href="${escapeAttribute(item.sourcePath)}" target="_blank" rel="noreferrer">Open source export</a>`
+                  : ""
+              }
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
+  function renderRewards() {
+    refs.rewardGrid.innerHTML = REWARD_TIERS.map(
+      (tier) => `
+        <article class="reward-card">
+          <strong>${escapeHtml(tier.title)}</strong>
+          <p>${escapeHtml(tier.copy)}</p>
+          <span class="score-chip ${tier.tone}">${escapeHtml(tier.scoreRange)}</span>
+        </article>
+      `
+    ).join("");
+  }
+
+  function renderDirectory(viewModel) {
+    refs.directoryGrid.innerHTML = dataset.rooms
+      .map((room) => {
+        const roomMembers = viewModel.members
+          .filter((member) => member.room === room)
+          .sort((left, right) => left.lastName.localeCompare(right.lastName));
+
+        return `
+          <article class="directory-room">
+            <div class="rank-top">
+              <strong>Room ${escapeHtml(room)}</strong>
+              <span class="badge">${roomMembers.length} rostered</span>
+            </div>
+            <div class="directory-member-list">
+              ${roomMembers
+                .map(
+                  (member) => `
+                    <button class="directory-member" type="button" data-member-id="${escapeAttribute(member.id)}">
+                      ${renderAvatar(member)}
+                      <div>
+                        <strong>${escapeHtml(member.name)}</strong>
+                        <p>${escapeHtml(member.role)} | ${escapeHtml(member.specialty)}</p>
+                      </div>
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+
+    refs.directoryGrid.querySelectorAll("[data-member-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.selectedMemberId = button.dataset.memberId || "";
+        renderAll();
+      });
+    });
+  }
+
+  function renderResourceLibrary() {
+    if (!dataset.resourceLibrary.length) {
+      refs.resourceLibrary.innerHTML = emptyState(
+        "No dropped files found yet.",
+        "Add folders under General Files and rerun the builder script."
+      );
+      return;
+    }
+
+    refs.resourceLibrary.innerHTML = dataset.resourceLibrary
+      .map(
+        (group) => `
+          <article class="resource-group">
+            <div class="rank-top">
+              <div>
+                <strong>${escapeHtml(group.title)}</strong>
+                <p>${group.fileCount} linked files</p>
+              </div>
+              <a class="ghost-button" href="${escapeAttribute(group.relativePath)}" target="_blank" rel="noreferrer">Open folder</a>
+            </div>
+            <div class="resource-list">
+              ${group.entries
+                .map(
+                  (entry) => `
+                    <a class="resource-item" href="${escapeAttribute(entry.relativePath)}" target="_blank" rel="noreferrer">
+                      <div>
+                        <strong>${escapeHtml(entry.name)}</strong>
+                        <p>${escapeHtml(entry.parentFolder || group.title)} | ${escapeHtml(entry.sizeLabel)}</p>
+                      </div>
+                      <span class="badge">${escapeHtml(entry.extension || "file")}</span>
+                    </a>
+                  `
+                )
+                .join("")}
+            </div>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function renderDocModules() {
+    refs.docModuleGrid.innerHTML = DOC_MODULE_CARDS.map(
+      (card) => `
+        <article class="module-card">
+          <strong>${escapeHtml(card.title)}</strong>
+          <p>${escapeHtml(card.copy)}</p>
+        </article>
+      `
+    ).join("");
+  }
+
+  function renderManualFeed(viewModel) {
+    if (!state.local.reports.length) {
+      refs.manualFeed.innerHTML = emptyState(
+        "No local reports saved yet.",
+        "Use Report Mode or the dossier quick actions to start layering notes on top of the imports."
+      );
+      return;
+    }
+
+    refs.manualFeed.innerHTML = state.local.reports
+      .slice()
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+      .map((report) => {
+        const member = viewModel.memberMap.get(report.memberId);
+        return `
+          <article class="manual-card">
+            <div class="manual-top">
+              <div>
+                <strong>${escapeHtml(member?.name || "Unknown member")}</strong>
+                <p>${escapeHtml(report.typeLabel)} | ${escapeHtml(report.reporter)} | ${escapeHtml(
+          formatDate(report.createdAt)
+        )}</p>
+              </div>
+              <button class="toggle-raw-button" type="button" data-remove-report="${escapeAttribute(report.id)}">
+                Remove
+              </button>
+            </div>
+            <p>${escapeHtml(report.summary)}</p>
+            <div class="badge-row">
+              <span class="score-chip ${scoreTone((member?.score || 700) + report.delta)}">${withSign(
+          report.delta
+        )}</span>
+              <span class="badge">Room ${escapeHtml(member?.room || "?")}</span>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
+  function renderModuleCards(target, cards) {
+    if (!target) {
+      return;
+    }
+
+    target.innerHTML = cards
+      .map(
+        (card) => `
+          <article class="module-card">
+            <strong>${escapeHtml(card.title)}</strong>
+            <p>${escapeHtml(card.copy)}</p>
+            <ul>
+              ${card.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join("")}
+            </ul>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function enhanceMember(member) {
+    const localReports = state.local.reports
+      .filter((report) => report.memberId === member.id)
+      .slice()
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+    const localDelta = localReports.reduce((sum, report) => sum + report.delta, 0);
+    const effectiveScore = clamp(member.score + localDelta, 300, 999);
+
+    return {
+      ...member,
+      localReports,
+      localDelta,
+      effectiveScore,
+      conductLabel: getConductLabel(effectiveScore, member.flaggedCount)
+    };
+  }
+
+  function buildCombinedEvidence(memberMap) {
+    const imported = dataset.evidenceFeed.map((item) => ({
+      ...item,
+      kind: "imported"
+    }));
+
+    const local = state.local.reports.map((report) => {
+      const member = memberMap.get(report.memberId);
+      const category = localReportCategory(report.type);
       return {
-        slot: slotId,
-        filament: slot.materialType || "Unknown",
-        color: colorNameFromHex(slot.colorHex) || "Unknown",
-        k: slot.materialCode || ""
+        id: report.id,
+        memberId: report.memberId,
+        memberName: member?.name || "Unknown member",
+        room: member?.room || "?",
+        categories: [category],
+        preview: report.summary,
+        rawText: report.summary,
+        attachmentNames: [],
+        sourcePath: "",
+        timestampIso: report.createdAt,
+        timestampLabel: formatDate(report.createdAt),
+        scoreDelta: report.delta,
+        kind: "local"
       };
     });
-    printer.ext = entry.externalSpool?.materialType || "Empty";
-  });
-  state.bambuSyncStatus = connectedPrinters
-    ? { mode: "live", source: snapshot.sourceLog || config.bambuSnapshotUrl || "bambu_snapshot.json", updatedAt: snapshot.generatedAt || "", connectedPrinters }
-    : { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
-}
 
-async function loadBambuSnapshot() {
-  if (!config.bambuSnapshotUrl) {
-    printers = defaultPrinters.map((printer) => createPrinterClone(printer));
-    state.bambuSyncStatus = { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
-    return false;
-  }
-  try {
-    const url = new URL(config.bambuSnapshotUrl, window.location.href);
-    url.searchParams.set("_ts", String(Date.now()));
-    const response = await fetch(url.toString(), { cache: "no-store" });
-    if (!response.ok) throw new Error("snapshot missing");
-    const data = await response.json();
-    applyBambuSnapshot(data);
-    return state.bambuSyncStatus.mode === "live";
-  } catch {
-    printers = defaultPrinters.map((printer) => createPrinterClone(printer));
-    state.bambuSyncStatus = { mode: "fallback", source: "Screenshot snapshot", updatedAt: "", connectedPrinters: 0 };
-    return false;
-  }
-}
-
-function spoolSvg(color, label, idSeed) {
-  const stops = colorStopsFor(color);
-  const gradientId = `filament-fill-${idSeed}`;
-  const rimDarkId = `rim-dark-${idSeed}`;
-  const rimLightId = `rim-light-${idSeed}`;
-  const stopMarkup = stops.map((stop, index) => {
-    const offset = stops.length === 1 ? "100%" : `${Math.round((index / (stops.length - 1)) * 100)}%`;
-    return `<stop offset="${offset}" stop-color="${stop}"></stop>`;
-  }).join("");
-  return `<svg class="spool-illustration" viewBox="0 0 220 220" role="img" aria-label="${label}"><defs><linearGradient id="${rimDarkId}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2d2d2f"></stop><stop offset="100%" stop-color="#101012"></stop></linearGradient><linearGradient id="${rimLightId}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#777a82"></stop><stop offset="100%" stop-color="#cfd3da"></stop></linearGradient><linearGradient id="${gradientId}" x1="0%" y1="0%" x2="100%" y2="100%">${stopMarkup}</linearGradient></defs><ellipse cx="110" cy="190" rx="68" ry="15" fill="rgba(18,18,18,0.14)"></ellipse><circle cx="110" cy="110" r="86" fill="url(#${rimDarkId})"></circle><circle cx="110" cy="110" r="70" fill="url(#${gradientId})"></circle><circle cx="110" cy="110" r="46" fill="url(#${rimLightId})"></circle><circle cx="110" cy="110" r="16" fill="#eceef1"></circle><rect x="96" y="36" width="28" height="148" rx="14" fill="rgba(255,255,255,0.13)"></rect><path d="M55 94c20-10 90-12 111-8" fill="none" stroke="rgba(255,255,255,0.23)" stroke-width="6" stroke-linecap="round"></path><path d="M60 124c35 9 79 10 99 4" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="5" stroke-linecap="round"></path><circle cx="110" cy="110" r="11" fill="#b7bcc5"></circle></svg>`;
-}
-
-function renderPrinterGrid() {
-  if (!els.printerGrid) return;
-  els.printerGrid.innerHTML = printers.map((printer) => {
-    const loaded = printer.slots.filter((entry) => entry.filament && entry.filament !== "Empty").length;
-    return `<article class="printer-card ${printer.id === state.currentPrinterId ? "active-printer" : ""}" data-printer-id="${printer.id}"><p class="eyebrow">${printer.model}</p><h3>${printer.name}</h3><p class="printer-meta">${loaded}/4 AMS slots loaded / Ext: ${printer.ext}</p><p class="printer-meta">IP ${printer.ip} / WLAN ${printer.wlan}</p><p class="printer-meta">Account ${printer.account} / SD ${printer.sd}</p><p class="printer-meta">Source ${printer.source}</p><div class="slot-grid">${printer.slots.map((entry) => `<div class="slot-chip"><strong>${entry.slot}</strong><small>${entry.filament === "Empty" ? "Empty" : `${entry.color} ${entry.filament}`}</small><small>${entry.k || ""}</small></div>`).join("")}</div></article>`;
-  }).join("");
-}
-
-function renderMatchGrid() {
-  if (!els.matchGrid) return;
-  const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
-  const targetMaterials = new Set([printer.ext, ...printer.slots.map((slot) => slot.filament)].map(normalize));
-  const matches = state.inventory.filter((item) => targetMaterials.has(normalize(item.material)) && item.amount >= 0.5).sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id)).slice(0, 3);
-  els.matchGrid.innerHTML = matches.length
-    ? matches.map((item) => `<button class="match-card" type="button" data-match-id="${item.id}"><div class="match-card-head"><span class="brand-logo">${brandLogoFor(item.brand)}</span><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</h3></div><p class="inventory-subline">${item.brand} / ${item.finish} / ${formatAmountSummary(item.amount)}</p></button>`).join("")
-    : `<article class="match-card"><p class="inventory-subline">No strong matches for ${printer.name} right now.</p></article>`;
-}
-
-function getFilteredInventory() {
-  return state.inventory.filter((item) => {
-    const haystack = [item.id, item.material, item.finish, item.brand, item.location, item.color, item.notes].join(" ").toLowerCase();
-    const reaction = getReactionCounts(item.id);
-    const matchesSearch = !state.search || haystack.includes(state.search);
-    const matchesMaterial = state.activeMaterial === "All" || item.material === state.activeMaterial;
-    const matchesLocation = state.activeLocation === "All" || item.location === state.activeLocation;
-    const matchesFamily = state.activeFamily === "All" || (item.colorFamily || colorFamilyFor(item.color)) === state.activeFamily;
-    const matchesMode = state.activeMode === "All" || (state.activeMode === "Low stock" && isBelowThreshold(item)) || (state.activeMode === "Ready to print" && item.amount >= 0.5) || (state.activeMode === "Favorites" && reaction.favorites > 0) || (state.activeMode === "Most liked" && reaction.likes > 0);
-    return matchesSearch && matchesMaterial && matchesLocation && matchesFamily && matchesMode;
-  }).sort((a, b) => Number(b.id) - Number(a.id) || b.id.localeCompare(a.id));
-}
-
-function getSearchSuggestions() {
-  const query = normalize(state.search);
-  if (!query) return [];
-  return state.inventory.map((item) => {
-    const title = `${item.color} ${item.material}`;
-    const fields = [item.color, item.brand, item.material, item.finish, item.location, title].map(normalize);
-    let score = -1;
-    if (fields.some((field) => field.startsWith(query))) score = 3;
-    else if (fields.some((field) => field.split(" ").some((part) => part.startsWith(query)))) score = 2;
-    else if (fields.some((field) => field.includes(query))) score = 1;
-    return { item, score, title };
-  }).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || Number(b.item.id) - Number(a.item.id)).slice(0, 3);
-}
-
-function renderSuggestions() {
-  if (!els.searchSuggestions) return;
-  const suggestions = getSearchSuggestions();
-  els.searchSuggestions.innerHTML = suggestions.map(({ item, title }) => `<button class="search-suggestion" type="button" data-suggest-id="${item.id}"><div class="search-mini-art">${spoolSvg(item.color, `${title} spool`, `suggest-${item.id}`)}</div><div><strong>${title}</strong><small>Tag ${item.id} / ${item.brand}</small></div></button>`).join("");
-}
-
-function getSelectedItem(filteredInventory) {
-  const selected = filteredInventory.find((item) => item.id === state.selectedId) || state.inventory.find((item) => item.id === state.selectedId);
-  return selected || filteredInventory[0] || state.inventory[0];
-}
-
-function renderStatStrip() {
-  if (!els.statStrip) return;
-  const total = state.inventory.length;
-  els.statStrip.innerHTML = `<article class="stat-card"><span>Total spools</span><strong>${total}</strong></article>`;
-}
-
-function renderFilters() {
-  if (els.materialFilters) els.materialFilters.innerHTML = getMaterials().map((material) => `<button class="filter-pill ${material === state.activeMaterial ? "active" : ""}" type="button" data-filter-type="material" data-value="${material}">${material}</button>`).join("");
-  if (els.locationFilters) els.locationFilters.innerHTML = getLocations().map((location) => `<button class="filter-pill ${location === state.activeLocation ? "active" : ""}" type="button" data-filter-type="location" data-value="${location}">${location}</button>`).join("");
-  if (els.modeFilters) els.modeFilters.innerHTML = getModes().map((mode) => `<button class="filter-pill ${mode === state.activeMode ? "active" : ""}" type="button" data-filter-type="mode" data-value="${mode}">${mode}</button>`).join("");
-  if (els.familyFilters) els.familyFilters.innerHTML = getFamilies().map((family) => `<button class="filter-pill ${family === state.activeFamily ? "active" : ""}" type="button" data-filter-type="family" data-value="${family}">${family}</button>`).join("");
-}
-
-function renderFeatured(item) {
-  if (!item) {
-    els.featuredName.textContent = "No filament loaded";
-    els.featuredMeta.textContent = "Add or sync inventory to populate the spotlight.";
-    els.featuredAmount.innerHTML = `<span class="amount-readout">0.0 spools <small>low</small></span>`;
-    els.featuredSwatch.innerHTML = "";
-    return;
-  }
-  els.featuredName.textContent = `${item.color} ${item.material}`;
-  els.featuredName.classList.add("filament-name");
-  els.featuredName.style.cssText = nameStyleFor(item.color);
-  els.featuredMeta.textContent = `${item.brand} / ${item.finish} / ${item.location}`;
-  els.featuredAmount.innerHTML = `<span class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></span>`;
-  els.featuredSwatch.innerHTML = spoolSvg(item.color, `${item.color} ${item.material} spool`, `featured-${item.id}`);
-}
-
-function renderHomeDashboard() {
-  if (els.lowStockGrid) {
-    const lowItems = getLowestStockItems();
-    els.lowStockGrid.innerHTML = lowItems.length
-      ? lowItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.location}</small></button>`).join("")
-      : `<article class="mini-home-card"><strong>No low spools right now</strong><small>Everything is above the low threshold.</small></article>`;
-  }
-  if (els.printerLoadGrid) {
-    els.printerLoadGrid.innerHTML = printers.map((printer) => {
-      const loadedSlot = firstLoadedSlot(printer);
-      const matchedItem = bestInventoryMatchForPrinterSlot(loadedSlot);
-      const loadedText = loadedSlot ? `${loadedSlot.slot} ${loadedSlot.color ? `${loadedSlot.color} ` : ""}${loadedSlot.filament}`.trim() : `Ext ${printer.ext}`;
-      return `<button class="mini-home-card" type="button" data-printer-id="${printer.id}"><div class="home-card-top"><strong>${printer.name}</strong><span class="badge">${printer.ext}</span></div><small>${loadedText}</small><span>${matchedItem ? `Best spool match: Tag ${matchedItem.id}` : "Tap to inspect this printer."}</span></button>`;
-    }).join("");
-  }
-  if (els.reorderQueueGrid) {
-    const reorderItems = getReorderQueueItems();
-    els.reorderQueueGrid.innerHTML = reorderItems.length
-      ? reorderItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / reorder at ${formatAmountSummary(item.reorderThreshold ?? defaultThresholdFor(item.material))}</small></button>`).join("")
-      : `<article class="mini-home-card"><strong>No reorder queue</strong><small>Nothing is currently below threshold.</small></article>`;
-  }
-  if (els.returnPromptGrid) {
-    const printerItems = getPrinterLoadedInventory();
-    els.returnPromptGrid.innerHTML = printerItems.length
-      ? printerItems.map((item) => `<article class="mini-home-card"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${item.location}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.position || "Loaded on printer"}</small><button class="card-action" type="button" data-return-home-id="${item.id}">Yes, return to shelf</button></article>`).join("")
-      : `<article class="mini-home-card"><strong>All clear</strong><small>No spool is currently marked as sitting on a printer.</small></article>`;
-  }
-  renderStationActions();
-}
-function renderTvBoard() {
-  const lowItems = getLowestStockItems();
-  if (els.tvLowStockGrid) {
-    els.tvLowStockGrid.innerHTML = lowItems.length
-      ? lowItems.map((item) => `<button class="mini-home-card" type="button" data-home-id="${item.id}"><div class="home-card-top"><span class="brand-logo">${brandLogoFor(item.brand)}</span><span class="badge">${formatPercent(item.amount)}</span></div><strong class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</strong><small>Tag ${item.id} / ${item.location}</small></button>`).join("")
-      : `<article class="mini-home-card"><strong>No low spools right now</strong><small>Everything is above the low threshold.</small></article>`;
-  }
-  if (els.tvPrinterGrid) {
-    els.tvPrinterGrid.innerHTML = printers.map((printer) => {
-      const loaded = printer.slots.filter((entry) => entry.filament && entry.filament !== "Empty").length;
-      return `<article class="printer-card ${printer.id === state.currentPrinterId ? "active-printer" : ""}" data-printer-id="${printer.id}"><p class="eyebrow">${printer.model}</p><h3>${printer.name}</h3><p class="printer-meta">${loaded}/4 AMS slots loaded / Ext: ${printer.ext}</p><div class="slot-grid">${printer.slots.map((entry) => `<div class="slot-chip"><strong>${entry.slot}</strong><small>${entry.filament === "Empty" ? "Empty" : `${entry.color} ${entry.filament}`}</small></div>`).join("")}</div></article>`;
-    }).join("");
-  }
-  if (els.tvMatchGrid) {
-    const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
-    const targetMaterials = new Set([printer.ext, ...printer.slots.map((slot) => slot.filament)].map(normalize));
-    const matches = state.inventory.filter((item) => targetMaterials.has(normalize(item.material)) && item.amount >= 0.5).sort((a, b) => b.amount - a.amount || Number(b.id) - Number(a.id)).slice(0, 4);
-    els.tvMatchGrid.innerHTML = matches.length
-      ? matches.map((item) => `<button class="match-card" type="button" data-match-id="${item.id}"><div class="match-card-head"><span class="brand-logo">${brandLogoFor(item.brand)}</span><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color} ${item.material}</h3></div><p class="inventory-subline">${item.brand} / ${item.finish} / ${formatAmountSummary(item.amount)}</p></button>`).join("")
-      : `<article class="match-card"><p class="inventory-subline">No strong matches for ${printer.name} right now.</p></article>`;
-  }
-}
-
-function renderInventoryGrid(items) {
-  if (!els.inventoryGrid || !els.resultsCopy) return;
-  els.resultsCopy.textContent = `${items.length} spool${items.length === 1 ? "" : "s"} showing`;
-  if (!items.length) {
-    els.inventoryGrid.innerHTML = `<article class="inventory-card"><div><h3>No matching spool</h3><p class="inventory-subline">Try a different material, storage area, or search phrase.</p></div></article>`;
-    return;
-  }
-  els.inventoryGrid.innerHTML = items.map((item) => {
-    const availability = getAvailability(item);
-    const reaction = getReactionCounts(item.id);
-    return `<article class="inventory-card ${item.id === state.selectedId ? "active" : ""}" data-id="${item.id}"><div class="card-topline"><div class="card-brandline"><span class="card-id">Tag ${item.id}</span><span class="brand-logo">${brandLogoFor(item.brand)}</span></div><div class="color-badge" style="background:${swatchFor(item.color)}"></div></div><div class="card-visual">${spoolSvg(item.color, `${item.color} ${item.material} spool`, `card-${item.id}`)}</div><div><h3 class="filament-name" style="${nameStyleFor(item.color)}">${item.color}</h3><p class="inventory-subline">${item.material} / ${item.finish} / ${item.brand}</p></div><div class="card-tags"><span class="badge">${item.location}</span><span class="badge">${locationBucketFor(item.location)}</span>${item.position ? `<span class="badge">${item.position}</span>` : ""}<span class="badge">${item.colorFamily}</span><span class="badge">${item.sealed}</span>${reaction.favorites > 0 ? `<span class="badge favorite">Favorite ${reaction.favorites}</span>` : ""}${reaction.likes > 0 ? `<span class="badge">Heart ${reaction.likes}</span>` : ""}${isBelowThreshold(item) ? `<span class="chip low">Reorder at ${Number(item.reorderThreshold).toFixed(1)}</span>` : ""}<span class="chip ${availability.tone}">${availability.label}</span></div><div class="card-footer"><strong class="amount-readout">${formatAmountSummary(item.amount)} <small>${formatPercent(item.amount)}</small></strong><button class="card-action" type="button" data-open-id="${item.id}">View</button></div></article>`;
-  }).join("") + (state.adminMode ? `<button class="inventory-card add-card" type="button" data-open-add-filament="true"><div class="plus-icon">+</div><div><h3>Add filament</h3><p class="inventory-subline">Create a new spool entry right from the catalog.</p></div></button>` : "");
-}
-
-function renderComments() {
-  if (!els.commentList || !els.commentsStatus) return;
-  els.commentsStatus.textContent = hasSharedComments ? "Shared web comments enabled" : "Local-only mode";
-  if (state.commentsLoading) { els.commentList.innerHTML = `<p class="comment-empty">Loading comments...</p>`; return; }
-  if (!state.comments.length) { els.commentList.innerHTML = `<p class="comment-empty">No comments yet. Be the first to leave a note.</p>`; return; }
-  els.commentList.innerHTML = state.comments.map((comment) => `<article class="comment-item"><strong>${comment.display_name || "Anonymous"}</strong><p>${comment.body}</p></article>`).join("");
-}
-
-async function fetchCommentsForSpool(spoolId) {
-  if (!els.commentList || !els.commentsStatus) return;
-  state.commentsLoading = true;
-  renderComments();
-  if (!hasSharedComments) {
-    state.comments = loadLocalComments().filter((comment) => comment.spool_id === spoolId).reverse();
-    state.commentsLoading = false;
-    renderComments();
-    return;
-  }
-  const url = `${config.supabaseUrl}/rest/v1/filament_comments?spool_id=eq.${encodeURIComponent(spoolId)}&select=display_name,body,created_at&order=created_at.desc`;
-  try {
-    const response = await fetch(url, { headers: { apikey: config.supabaseAnonKey, Authorization: `Bearer ${config.supabaseAnonKey}` } });
-    const data = response.ok ? await response.json() : [];
-    state.comments = Array.isArray(data) ? data : [];
-  } catch {
-    state.comments = [];
-  }
-  state.commentsLoading = false;
-  renderComments();
-}
-
-async function postComment(spoolId, displayName, body) {
-  const cleanComment = body.trim();
-  const cleanName = displayName.trim() || "Anonymous";
-  if (!cleanComment) return false;
-  if (!hasSharedComments) {
-    const comments = loadLocalComments();
-    comments.push({ spool_id: spoolId, display_name: cleanName, body: cleanComment, created_at: new Date().toISOString() });
-    saveLocalComments(comments);
-    return true;
-  }
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/filament_comments`, { method: "POST", headers: { "Content-Type": "application/json", apikey: config.supabaseAnonKey, Authorization: `Bearer ${config.supabaseAnonKey}`, Prefer: "return=minimal" }, body: JSON.stringify({ spool_id: spoolId, display_name: cleanName, body: cleanComment }) });
-  return response.ok;
-}
-
-function amazonUrlFor(item) {
-  const terms = [item.brand, item.color, item.material, item.finish, "filament"].filter(Boolean).join(" ");
-  return `https://www.amazon.com/s?k=${encodeURIComponent(terms)}`;
-}
-function spoolUrlFor(item) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("tag", item.id);
-  return url.toString();
-}
-function qrImageUrlFor(item) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=12&data=${encodeURIComponent(spoolUrlFor(item))}`;
-}
-
-function openAddFilamentModal() {
-  if (!state.adminMode || !els.addFilamentModal) return;
-  els.newTag.value = "";
-  els.newMaterial.value = "PLA";
-  els.newFinish.value = "Normal";
-  els.newBrand.value = "Generic";
-  els.newColor.value = "";
-  els.newAmount.value = "1.0";
-  els.newThreshold.value = "0.3";
-  els.newLocation.value = "";
-  els.newPosition.value = "";
-  if (els.newSealed) {
-    els.newSealed.innerHTML = getSealChoices().map((status) => `<option value="${status}" ${normalize(status) === "unopened" ? "selected" : ""}>${status}</option>`).join("");
-  }
-  els.newRestock.value = "Unknown";
-  els.newNotes.value = "";
-  els.addFilamentModal.showModal();
-}
-
-function closeAddFilamentModal() {
-  if (els.addFilamentModal?.open) els.addFilamentModal.close();
-}
-
-function createFilamentFromForm() {
-  const material = els.newMaterial.value.trim() || "Unknown";
-  return {
-    id: els.newTag.value.trim(),
-    material: material.toUpperCase(),
-    finish: els.newFinish.value.trim() || "Unknown",
-    brand: els.newBrand.value.trim() || "Generic",
-    color: els.newColor.value.trim() || "Unknown",
-    amount: clampAmount(els.newAmount.value || 0),
-    reorderThreshold: Number(els.newThreshold.value || defaultThresholdFor(material)),
-    location: els.newLocation.value.trim() || "Unknown",
-    position: els.newPosition.value.trim(),
-    sealed: normalizeSealStatus(els.newSealed.value.trim() || "Unknown"),
-    restock: els.newRestock.value.trim() || "Unknown",
-    notes: els.newNotes.value.trim(),
-    colorFamily: colorFamilyFor(els.newColor.value)
-  };
-}
-
-function renderDetails(item) {
-  if (!item) {
-    state.comments = [];
-    state.commentsLoading = false;
-    els.detailTitle.textContent = "Choose a filament";
-    els.detailSubtitle.textContent = "Click any spool card to inspect it here.";
-    els.detailAmount.textContent = "0.0";
-    els.detailProgress.style.width = "0%";
-    els.detailStatus.textContent = "No spool selected.";
-    els.detailSwatch.innerHTML = "";
-    els.detailList.innerHTML = "";
-    els.detailNotes.textContent = "No notes for this spool yet.";
-    els.thresholdInput.value = "0.3";
-    els.likeCount.textContent = "0";
-    els.favoriteCount.textContent = "0";
-      els.amazonLink.href = "https://www.amazon.com/";
-      if (els.qrPreview) els.qrPreview.src = "";
-      if (els.qrTagCopy) els.qrTagCopy.textContent = "Tag";
-      if (els.qrLinkCopy) els.qrLinkCopy.textContent = "Open this spool directly from a phone camera or from inside the tracker scanner.";
-      if (els.downloadQrButton) els.downloadQrButton.href = "#";
-      if (els.qrDownloadLink) els.qrDownloadLink.href = "#";
-      if (els.locationSelect) els.locationSelect.innerHTML = "";
-    if (els.positionInput) els.positionInput.value = "";
-    if (els.sealSelect) els.sealSelect.innerHTML = "";
-    if (els.locationBucket) els.locationBucket.textContent = "On shelf";
-    renderComments();
-    return;
-  }
-
-  const reaction = getReactionCounts(item.id);
-  const availability = getAvailability(item);
-  els.detailTitle.textContent = `${item.color} ${item.material}`;
-  els.detailTitle.classList.add("filament-name");
-  els.detailTitle.style.cssText = nameStyleFor(item.color);
-  els.detailSubtitle.textContent = `${item.brand} / ${item.finish} / Tag ${item.id}`;
-  els.detailAmount.innerHTML = `${Number(item.amount).toFixed(1)} <small>${formatPercent(item.amount)}</small>`;
-  els.detailProgress.style.width = `${Math.min(100, Math.max(0, item.amount) * 100)}%`;
-  els.detailProgress.style.background = swatchFor(item.color);
-  els.detailStatus.textContent = `${availability.label} / stored at ${item.location} / restock: ${item.restock}`;
-  els.detailSwatch.innerHTML = spoolSvg(item.color, `${item.color} ${item.material} spool`, `detail-${item.id}`);
-  if (els.locationSelect) {
-    els.locationSelect.innerHTML = getLocationChoices().map((location) => `<option value="${location}" ${location === item.location ? "selected" : ""}>${location}</option>`).join("");
-  }
-  if (els.sealSelect) {
-    els.sealSelect.innerHTML = getSealChoices().map((status) => `<option value="${status}" ${status === item.sealed ? "selected" : ""}>${status}</option>`).join("");
-  }
-  if (els.positionInput) {
-    els.positionInput.value = item.position || "";
-  }
-  if (els.locationBucket) {
-    els.locationBucket.textContent = locationBucketFor(item.location);
-  }
-  els.detailList.innerHTML = [
-    ["Material", item.material],
-    ["Finish", item.finish],
-    ["Brand", item.brand],
-    ["Color", item.color],
-    ["Color family", item.colorFamily || colorFamilyFor(item.color)],
-    ["Storage", item.location],
-    ["Position", item.position || "Not set"],
-    ["Placement", locationBucketFor(item.location)],
-    ["Seal status", item.sealed],
-    ["Order again", item.restock],
-    ["Spool tag", item.id],
-    ["Reorder at", formatAmountSummary(item.reorderThreshold ?? defaultThresholdFor(item.material))]
-  ].map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("");
-  els.detailNotes.textContent = item.notes || "No notes for this spool yet.";
-  els.thresholdInput.value = Number(item.reorderThreshold ?? defaultThresholdFor(item.material)).toFixed(1);
-  els.likeCount.textContent = String(reaction.likes || 0);
-  els.favoriteCount.textContent = String(reaction.favorites || 0);
-  els.amazonLink.href = amazonUrlFor(item);
-  const spoolUrl = spoolUrlFor(item);
-  const qrUrl = qrImageUrlFor(item);
-  if (els.qrPreview) els.qrPreview.src = qrUrl;
-  if (els.qrTagCopy) els.qrTagCopy.textContent = `Tag ${item.id}`;
-  if (els.qrLinkCopy) els.qrLinkCopy.textContent = spoolUrl;
-  if (els.downloadQrButton) els.downloadQrButton.href = qrUrl;
-  if (els.qrDownloadLink) els.qrDownloadLink.href = qrUrl;
-  fetchCommentsForSpool(item.id);
-}
-
-function renderBambuSyncCard() {
-  if (!els.bambuSyncTitle || !els.bambuSyncCopy) return;
-  if (state.bambuSyncStatus.mode === "live") {
-    els.bambuSyncTitle.textContent = "Automatic printer reading connected";
-    els.bambuSyncCopy.textContent = `${state.bambuSyncStatus.connectedPrinters} printer${state.bambuSyncStatus.connectedPrinters === 1 ? "" : "s"} are being read from your local Bambu Studio log snapshot. The dashboard will keep using the live snapshot when the JSON feed is refreshed.`;
-    if (els.bambuSyncMeta) {
-      const sourceName = String(state.bambuSyncStatus.source || "").split(/[\\/]/).pop();
-      els.bambuSyncMeta.textContent = sourceName ? `Source ${sourceName}` : "";
-    }
-  } else {
-    els.bambuSyncTitle.textContent = "Automatic printer reading not connected";
-    els.bambuSyncCopy.textContent = "The tracker is using your saved printer snapshots right now. Run the local Bambu snapshot helper to generate bambu_snapshot.json and this section will switch over automatically.";
-    if (els.bambuSyncMeta) els.bambuSyncMeta.textContent = "Fallback mode";
-  }
-}
-
-function adjustSelectedAmount(delta) {
-  const item = state.inventory.find((entry) => entry.id === state.selectedId);
-  if (!item) return;
-  item.amount = clampAmount(Math.round((Number(item.amount) + delta) * 10) / 10);
-  saveInventory();
-  void syncItemAndRefresh(item, "upsert");
-  renderAll();
-}
-
-function updateSelectedPlacement(nextLocation, nextPosition) {
-  if (!state.adminMode) return;
-  const item = state.inventory.find((entry) => entry.id === state.selectedId);
-  if (!item) return;
-  if (nextLocation) item.location = nextLocation;
-  item.position = String(nextPosition || "").trim();
-  saveInventory();
-  void syncItemAndRefresh(item, "upsert");
-  renderAll();
-}
-
-  function updateSelectedSeal(nextSeal) {
-  if (!state.adminMode) return;
-  const item = state.inventory.find((entry) => entry.id === state.selectedId);
-  if (!item || !nextSeal) return;
-  item.sealed = nextSeal;
-  saveInventory();
-  void syncItemAndRefresh(item, "upsert");
-  renderAll();
-}
-
-function goHome() {
-  state.search = "";
-  state.activeMaterial = "All";
-  state.activeLocation = "All";
-  state.activeMode = "All";
-  state.activeFamily = "All";
-  state.selectedId = null;
-  if (els.searchInput) els.searchInput.value = "";
-  renderAll();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function renderAll() {
-  const filtered = getFilteredInventory();
-  const selected = getSelectedItem(filtered);
-  state.selectedId = selected ? selected.id : null;
-  syncSelectedTagToUrl(state.selectedId);
-  renderPrinterGrid();
-  renderBambuSyncCard();
-  renderMatchGrid();
-  renderStatStrip();
-  renderHomeDashboard();
-  renderTvBoard();
-  renderFilters();
-  renderSuggestions();
-  renderFeatured(selected || state.inventory[0]);
-  renderInventoryGrid(filtered);
-  renderDetails(selected || null);
-  if (config.googleSheetWebUrl && els.spreadsheetLink) {
-    els.spreadsheetLink.href = config.googleSheetWebUrl;
-  }
-async function deleteSelectedFilament() {
-  if (!state.adminMode || !state.selectedId) return;
-  const item = state.inventory.find((entry) => entry.id === state.selectedId);
-  if (!item) return;
-  const confirmed = window.confirm(`Remove filament tag ${item.id} from the tracker and spreadsheet?`);
-  if (!confirmed) return;
-  const previousId = state.selectedId;
-  state.inventory = state.inventory.filter((entry) => entry.id !== previousId);
-  delete state.reactions[previousId];
-  clearPendingSheetWrite(previousId);
-  state.selectedId = state.inventory[0]?.id || null;
-  saveInventory();
-  saveLocalReactions();
-  renderAll();
-  const deleted = await syncItemToGoogleSheet(item, "delete");
-  if (!deleted) {
-    await loadInventoryFromGoogleSheet();
-    renderAll();
-    window.alert("The filament was removed locally, but the spreadsheet delete did not confirm. Please refresh and try again.");
-  } else {
-    await loadInventoryFromGoogleSheet();
-    renderAll();
-  }
-}
-}
-
-async function refreshLiveData() {
-  if (state.refreshInFlight) return false;
-  if (Object.keys(state.pendingSheetWrites).length) return false;
-  state.refreshInFlight = true;
-  try {
-    const previousSelected = state.selectedId;
-    const loaded = await loadInventoryFromGoogleSheet();
-    await loadBambuSnapshot();
-    if (loaded && previousSelected && state.inventory.some((item) => item.id === previousSelected)) {
-      state.selectedId = previousSelected;
-    }
-    renderAll();
-    return loaded;
-  } finally {
-    state.refreshInFlight = false;
-  }
-}
-
-function bindStaticEvents() {
-  els.siteLockForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const code = String(els.siteLockInput?.value || "").trim();
-    if (code === SITE_ACCESS_CODE) {
-      if (els.siteLockInput) els.siteLockInput.value = "";
-      applySiteLock(true);
-      renderAll();
-    } else {
-      if (els.siteLockStatus) els.siteLockStatus.textContent = "That site code did not work.";
-    }
-  });
-  els.siteLockButton?.addEventListener("click", () => {
-    if (!state.siteUnlocked) return;
-    applySiteLock(false);
-    stopQrScanner();
-  });
-  els.stationModeButton?.addEventListener("click", () => {
-    applyStationMode(!state.stationMode);
-    renderAll();
-  });
-  els.jumpFeatured?.addEventListener("click", () => {
-    const item = getSelectedItem(getFilteredInventory());
-    if (!item) return;
-    state.selectedId = item.id;
-    renderAll();
-    focusDetailPanelIfStacked();
-  });
-
-  els.homeButton?.addEventListener("click", goHome);
-  els.focusScanInputButton?.addEventListener("click", () => {
-    els.stationScanInput?.focus();
-    els.stationScanInput?.select();
-  });
-  els.stationScanInput?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    const rawValue = String(event.target.value || "").trim();
-    if (!rawValue) return;
-    handleStationScan(rawValue);
-    event.target.value = "";
-  });
-  els.startScanButton?.addEventListener("click", () => { void startQrScanner(); });
-  els.scanUploadInput?.addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    void scanQrFromImage(file);
-    event.target.value = "";
-  });
-
-  els.resetButton?.addEventListener("click", async () => {
-    if (!state.adminMode) return;
-    localStorage.removeItem(STORAGE_KEY);
-    state.inventory = window.DEFAULT_INVENTORY.map((item) => ({
-      ...item,
-      reorderThreshold: item.reorderThreshold ?? defaultThresholdFor(item.material),
-      colorFamily: item.colorFamily || colorFamilyFor(item.color)
-    }));
-    await refreshLiveData();
-  });
-
-  els.searchInput?.addEventListener("input", (event) => {
-    state.search = normalize(event.target.value);
-    renderAll();
-  });
-
-  els.themeSelect?.addEventListener("change", (event) => {
-    applyTheme(event.target.value);
-    renderAll();
-  });
-  els.adminModeButton?.addEventListener("click", () => {
-    if (state.adminMode) {
-      applyAdminMode(false);
-      renderAll();
-      return;
-    }
-    const code = window.prompt("Enter admin code");
-    if (code === ADMIN_CODE) {
-      applyAdminMode(true);
-      renderAll();
-    } else if (code !== null) {
-      window.alert("That code did not work.");
-    }
-  });
-  els.tvModeButton?.addEventListener("click", () => {
-    applyTvMode(!state.tvMode);
-    renderAll();
-  });
-  els.tvExitButton?.addEventListener("click", () => {
-    applyTvMode(false);
-    renderAll();
-  });
-
-  document.addEventListener("click", (event) => {
-    const filterButton = event.target.closest("[data-filter-type]");
-    if (filterButton) {
-      const type = filterButton.dataset.filterType;
-      const value = filterButton.dataset.value;
-      if (type === "material") state.activeMaterial = state.activeMaterial === value ? "All" : value;
-      if (type === "location") state.activeLocation = state.activeLocation === value ? "All" : value;
-      if (type === "mode") state.activeMode = state.activeMode === value ? "All" : value;
-      if (type === "family") state.activeFamily = state.activeFamily === value ? "All" : value;
-      renderAll();
-      return;
-    }
-
-    const card = event.target.closest("[data-id]");
-    if (card && card.dataset.id) {
-      state.selectedId = card.dataset.id;
-      renderAll();
-      return;
-    }
-
-    const openButton = event.target.closest("[data-open-id]");
-    if (openButton && openButton.dataset.openId) {
-      state.selectedId = openButton.dataset.openId;
-      renderAll();
-      focusDetailPanelIfStacked();
-      return;
-    }
-
-    const suggestion = event.target.closest("[data-suggest-id]");
-    if (suggestion && suggestion.dataset.suggestId) {
-      state.selectedId = suggestion.dataset.suggestId;
-      state.search = "";
-      if (els.searchInput) els.searchInput.value = "";
-      renderAll();
-      focusDetailPanelIfStacked();
-      return;
-    }
-
-    const printer = event.target.closest("[data-printer-id]");
-    if (printer && printer.dataset.printerId) {
-      state.currentPrinterId = printer.dataset.printerId;
-      renderAll();
-      return;
-    }
-
-    const matchCard = event.target.closest("[data-match-id]");
-    if (matchCard && matchCard.dataset.matchId) {
-      state.selectedId = matchCard.dataset.matchId;
-      renderAll();
-      focusDetailPanelIfStacked();
-      return;
-    }
-
-    const homeCard = event.target.closest("[data-home-id]");
-    if (homeCard && homeCard.dataset.homeId) {
-      state.selectedId = homeCard.dataset.homeId;
-      renderAll();
-      focusDetailPanelIfStacked();
-      return;
-    }
-
-    const returnHomeButton = event.target.closest("[data-return-home-id]");
-    if (returnHomeButton && returnHomeButton.dataset.returnHomeId) {
-      state.selectedId = returnHomeButton.dataset.returnHomeId;
-      const item = getSelectedStationItem();
-      if (item) {
-        const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location) || "Cabinet 1 Misc.";
-        setItemPlacement(item, shelfChoice, "");
-        updateStationStatus(`Returned tag ${item.id} to shelf.`);
+    return [...local, ...imported].sort((left, right) => {
+      const severity = left.scoreDelta - right.scoreDelta;
+      if (severity !== 0) {
+        return severity;
       }
-      return;
-    }
-
-    const stationAction = event.target.closest("[data-station-action]");
-    if (stationAction && stationAction.dataset.stationAction) {
-      applyStationAction(stationAction.dataset.stationAction);
-      return;
-    }
-
-    const stationAssign = event.target.closest("[data-station-assign]");
-    if (stationAssign && stationAssign.dataset.stationAssign) {
-      const [printerId, slot] = stationAssign.dataset.stationAssign.split("|");
-      assignSelectedToPrinterSlot(printerId, slot);
-      return;
-    }
-
-    const quickComment = event.target.closest("[data-quick-comment]");
-    if (quickComment && els.commentText) {
-      const text = quickComment.dataset.quickComment || "";
-      els.commentText.value = els.commentText.value ? `${els.commentText.value} ${text}`.trim() : text;
-      els.commentText.focus();
-      return;
-    }
-
-    if (event.target.closest("[data-open-add-filament='true']")) {
-      openAddFilamentModal();
-    }
-  });
-
-  els.increaseButton?.addEventListener("click", () => adjustSelectedAmount(0.1));
-  els.decreaseButton?.addEventListener("click", () => adjustSelectedAmount(-0.1));
-
-  els.thresholdForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!state.adminMode) return;
-    const item = state.inventory.find((entry) => entry.id === state.selectedId);
-    if (!item) return;
-    item.reorderThreshold = Math.max(0, Number(els.thresholdInput.value || defaultThresholdFor(item.material)));
-    saveInventory();
-    renderAll();
-  });
-
-  els.sealForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateSelectedSeal(els.sealSelect?.value);
-  });
-
-  els.likeButton?.addEventListener("click", () => {
-    if (!state.selectedId) return;
-    const current = getReactionCounts(state.selectedId);
-    state.reactions[state.selectedId] = { ...current, likes: (current.likes || 0) + 1 };
-    saveLocalReactions();
-    renderAll();
-  });
-
-  els.favoriteButton?.addEventListener("click", () => {
-    if (!state.selectedId) return;
-    const current = getReactionCounts(state.selectedId);
-    state.reactions[state.selectedId] = { ...current, favorites: (current.favorites || 0) + 1 };
-    saveLocalReactions();
-    renderAll();
-  });
-  els.copySpoolLinkButton?.addEventListener("click", async () => {
-    const item = state.inventory.find((entry) => entry.id === state.selectedId);
-    if (!item) return;
-    const link = spoolUrlFor(item);
-    try {
-      await navigator.clipboard.writeText(link);
-      if (els.qrLinkCopy) els.qrLinkCopy.textContent = "Spool link copied.";
-      window.setTimeout(() => {
-        if (els.qrLinkCopy && state.selectedId === item.id) els.qrLinkCopy.textContent = link;
-      }, 1800);
-    } catch {
-      if (els.qrLinkCopy) els.qrLinkCopy.textContent = link;
-    }
-  });
-  els.deleteFilamentButton?.addEventListener("click", () => {
-    void deleteSelectedFilament();
-  });
-
-  els.locationForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateSelectedPlacement(els.locationSelect?.value, els.positionInput?.value);
-  });
-
-  els.moveToPrinter?.addEventListener("click", () => {
-    const printer = printers.find((entry) => entry.id === state.currentPrinterId) || printers[0];
-    const printerName = printer?.name || "Printer";
-    updateSelectedPlacement(printerName, "Loaded on printer");
-  });
-
-  els.moveToShelf?.addEventListener("click", () => {
-    const item = state.inventory.find((entry) => entry.id === state.selectedId);
-    if (!item) return;
-    const shelfChoice = getLocationChoices().find((location) => locationBucketFor(location) === "On shelf" && location !== item.location);
-    updateSelectedPlacement(shelfChoice || "Cabinet 1 Misc.", "");
-  });
-
-  els.addFilamentButton?.addEventListener("click", openAddFilamentModal);
-  els.closeAddFilament?.addEventListener("click", closeAddFilamentModal);
-
-  els.addFilamentForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!state.adminMode) return;
-    const newItem = createFilamentFromForm();
-    if (!newItem.id) return;
-    state.inventory = [newItem, ...state.inventory.filter((item) => item.id !== newItem.id)]
-      .sort((a, b) => Number(b.id) - Number(a.id) || b.id.localeCompare(a.id));
-    state.selectedId = newItem.id;
-    saveInventory();
-    void syncItemAndRefresh(newItem, "upsert");
-    closeAddFilamentModal();
-    renderAll();
-  });
-
-  els.commentForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!state.selectedId) return;
-    const ok = await postComment(state.selectedId, els.commentName.value, els.commentText.value);
-    if (!ok) return;
-    els.commentName.value = "";
-    els.commentText.value = "";
-    fetchCommentsForSpool(state.selectedId);
-  });
-}
-
-async function initializeApp() {
-  applyTheme(state.theme);
-  applyAdminMode(state.adminMode);
-  applyTvMode(state.tvMode);
-  applyStationMode(state.stationMode);
-  applySiteLock(false);
-  const requestedTag = getRequestedTagFromUrl();
-  if (requestedTag && state.inventory.some((item) => item.id === requestedTag)) {
-    state.selectedId = requestedTag;
+      return toTime(right.timestampIso) - toTime(left.timestampIso);
+    });
   }
-  bindStaticEvents();
-  renderAll();
-  void refreshLiveData();
-  window.setInterval(async () => {
-    await refreshLiveData();
-  }, Number(config.googleSheetRefreshMs || 5000));
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState !== "visible") return;
-    applyTheme(loadThemePreference());
-    applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
-    applyTvMode(loadBooleanPreference(TV_MODE_KEY));
-    applyStationMode(loadBooleanPreference(STATION_MODE_KEY));
-    await refreshLiveData();
-  });
-  window.addEventListener("pageshow", () => {
-    applyTheme(loadThemePreference());
-    applyAdminMode(loadBooleanPreference(ADMIN_MODE_KEY));
-    applyTvMode(loadBooleanPreference(TV_MODE_KEY));
-    applyStationMode(loadBooleanPreference(STATION_MODE_KEY));
-    applySiteLock(false);
-    renderAll();
-  });
-  window.addEventListener("beforeunload", stopQrScanner);
-}
 
-initializeApp();
+  function passesFilters(member) {
+    if (state.room !== "All" && member.room !== state.room) {
+      return false;
+    }
+
+    if (state.role !== "All" && member.role !== state.role) {
+      return false;
+    }
+
+    if (state.category !== "All" && !memberHasCategory(member, state.category)) {
+      return false;
+    }
+
+    if (!state.search) {
+      return true;
+    }
+
+    return member.searchBlob.includes(state.search);
+  }
+
+  function passesEvidenceFilters(item) {
+    if (state.category !== "All" && !item.categories.includes(state.category)) {
+      return false;
+    }
+
+    if (state.room !== "All" && item.room !== state.room) {
+      return false;
+    }
+
+    if (!state.search) {
+      return true;
+    }
+
+    return (
+      item.memberName.toLowerCase().includes(state.search) ||
+      item.preview.toLowerCase().includes(state.search)
+    );
+  }
+
+  function memberHasCategory(member, category) {
+    if (member.topCategories.includes(category)) {
+      return true;
+    }
+
+    if (member.messages.some((message) => message.categories.includes(category))) {
+      return true;
+    }
+
+    return member.localReports.some((report) => localReportCategory(report.type) === category);
+  }
+
+  function sortMembers(left, right) {
+    switch (state.sort) {
+      case "flags":
+        return right.flaggedCount - left.flaggedCount || sortMembersByScore(left, right);
+      case "activity":
+        return right.messageCount - left.messageCount || sortMembersByScore(left, right);
+      case "recent":
+        return toTime(right.lastSeen) - toTime(left.lastSeen) || sortMembersByScore(left, right);
+      case "score":
+      default:
+        return sortMembersByScore(left, right);
+    }
+  }
+
+  function sortMembersByScore(left, right) {
+    return (
+      right.effectiveScore - left.effectiveScore ||
+      right.helpfulCount - left.helpfulCount ||
+      left.name.localeCompare(right.name)
+    );
+  }
+
+  function addLocalReport({ memberId, reporter, type, delta, summary }) {
+    const report = {
+      id: cryptoId(),
+      memberId,
+      reporter,
+      type,
+      typeLabel: reportTypeLabel(type),
+      delta,
+      summary,
+      createdAt: new Date().toISOString()
+    };
+
+    state.local.reports = [report, ...state.local.reports];
+    persistLocalState();
+  }
+
+  function persistLocalState() {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.local));
+  }
+
+  function loadLocalState() {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}");
+      const reports = asList(parsed.reports).map((report) => ({
+        id: String(report.id || cryptoId()),
+        memberId: String(report.memberId || ""),
+        reporter: String(report.reporter || "Unknown"),
+        type: String(report.type || "conduct"),
+        typeLabel: reportTypeLabel(report.type || "conduct"),
+        delta: Number(report.delta || 0),
+        summary: String(report.summary || ""),
+        createdAt: String(report.createdAt || new Date().toISOString())
+      }));
+
+      return { reports };
+    } catch (error) {
+      return { reports: [] };
+    }
+  }
+
+  function normalizeData(source) {
+    const members = asList(source.members).map(normalizeMember);
+    const rooms = Array.from(new Set(members.map((member) => member.room))).sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true })
+    );
+    const messageLookup = new Map();
+
+    members.forEach((member) => {
+      member.messages.forEach((message) => {
+        messageLookup.set(member.id + ":" + message.id, message);
+      });
+    });
+
+    const evidenceFeed = asList(source.evidenceFeed).map((item) => normalizeEvidence(item, messageLookup));
+    const importedCategories = Array.from(
+      new Set([
+        ...evidenceFeed.flatMap((item) => item.categories),
+        ...members.flatMap((member) => member.topCategories)
+      ])
+    ).sort((left, right) => left.localeCompare(right));
+
+    const localCategories = ["Commendation", "Conduct", "Attendance Note", "Admin"];
+    const categoryOptions = Array.from(new Set([...importedCategories, ...localCategories])).sort((a, b) =>
+      a.localeCompare(b)
+    );
+
+    return {
+      summary: source.summary || {},
+      members,
+      rooms,
+      evidenceFeed,
+      categoryOptions,
+      resourceLibrary: asList(source.resourceLibrary).map((group) => ({
+        title: String(group.title || ""),
+        relativePath: String(group.relativePath || ""),
+        fileCount: Number(group.fileCount || 0),
+        entries: asList(group.entries).map((entry) => ({
+          name: String(entry.name || ""),
+          relativePath: String(entry.relativePath || ""),
+          extension: String(entry.extension || ""),
+          sizeBytes: Number(entry.sizeBytes || 0),
+          sizeLabel: String(entry.sizeLabel || ""),
+          parentFolder: String(entry.parentFolder || "")
+        }))
+      }))
+    };
+  }
+
+  function normalizeMember(member) {
+    const messages = asList(member.messages)
+      .map((message) => normalizeMessage(message))
+      .sort((left, right) => toTime(right.timestampIso) - toTime(left.timestampIso));
+    const roles = asList(member.roles);
+    const topCategories = asList(member.topCategories);
+    const messageCount = Number(member.messageCount || messages.length || 0);
+    const searchBlob = [
+      member.name,
+      member.firstName,
+      member.lastName,
+      member.codename,
+      member.specialty,
+      member.room,
+      member.role,
+      member.discordDisplay,
+      member.discordUsername,
+      member.serverNickname,
+      roles.join(" "),
+      topCategories.join(" "),
+      member.note
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      id: String(member.id || ""),
+      firstName: String(member.firstName || ""),
+      lastName: String(member.lastName || ""),
+      name: String(member.name || ""),
+      room: String(member.room || ""),
+      role: String(member.role || "Student"),
+      codename: String(member.codename || "Unassigned"),
+      specialty: String(member.specialty || "General"),
+      discordDisplay: String(member.discordDisplay || ""),
+      discordUsername: String(member.discordUsername || ""),
+      discordUserId: String(member.discordUserId || ""),
+      joinedServer: String(member.joinedServer || ""),
+      serverNickname: String(member.serverNickname || ""),
+      roles,
+      avatarPath: String(member.avatarPath || ""),
+      sourceFolder: String(member.sourceFolder || ""),
+      messageCount,
+      flaggedCount: Number(member.flaggedCount || 0),
+      helpfulCount: Number(member.helpfulCount || 0),
+      attachmentCount: Number(member.attachmentCount || 0),
+      linkOnlyCount: Number(member.linkOnlyCount || 0),
+      firstSeen: String(member.firstSeen || ""),
+      lastSeen: String(member.lastSeen || ""),
+      score: Number(member.score || 0),
+      note: String(member.note || ""),
+      topCategories,
+      messages,
+      searchBlob
+    };
+  }
+
+  function normalizeMessage(message) {
+    return {
+      id: String(message.id || ""),
+      snowflake: String(message.snowflake || ""),
+      timestampLabel: String(message.timestampLabel || ""),
+      timestampIso: String(message.timestampIso || ""),
+      text: String(message.text || ""),
+      preview: String(message.preview || ""),
+      categories: asList(message.categories),
+      scoreDelta: Number(message.scoreDelta || 0),
+      linkCount: Number(message.linkCount || 0),
+      attachmentNames: asList(message.attachmentNames),
+      sourcePath: String(message.sourcePath || "")
+    };
+  }
+
+  function normalizeEvidence(item, messageLookup) {
+    const memberId = String(item.memberId || "");
+    const messageId = String(item.messageId || "");
+    const message = messageLookup.get(memberId + ":" + messageId);
+
+    return {
+      id: "imported-" + memberId + "-" + messageId,
+      memberId,
+      memberName: String(item.memberName || ""),
+      room: String(item.room || ""),
+      categories: asList(item.categories),
+      preview: String(item.preview || message?.preview || ""),
+      rawText: String(message?.text || ""),
+      attachmentNames: asList(item.attachmentNames || message?.attachmentNames),
+      sourcePath: String(item.sourcePath || message?.sourcePath || ""),
+      timestampIso: String(item.timestampIso || message?.timestampIso || ""),
+      timestampLabel: String(item.timestampLabel || message?.timestampLabel || ""),
+      scoreDelta: Number(item.scoreDelta || 0)
+    };
+  }
+
+  function reportTypeLabel(type) {
+    switch (type) {
+      case "commendation":
+        return "Commendation";
+      case "attendance":
+        return "Attendance Note";
+      case "admin":
+        return "Admin";
+      case "conduct":
+      default:
+        return "Conduct";
+    }
+  }
+
+  function localReportCategory(type) {
+    return reportTypeLabel(type);
+  }
+
+  function getConductLabel(score, flaggedCount) {
+    if (score >= 880 && flaggedCount < 10) {
+      return "Trusted Operative";
+    }
+
+    if (score >= 730 && flaggedCount < 35) {
+      return "Reliable Builder";
+    }
+
+    if (score >= 600 && flaggedCount < 80) {
+      return "Needs Tightening";
+    }
+
+    return "Critical Review";
+  }
+
+  function scoreTone(score) {
+    if (score >= 760) {
+      return "good";
+    }
+
+    if (score >= 600) {
+      return "warn";
+    }
+
+    return "risk";
+  }
+
+  function categoryTone(category) {
+    if (category === "Helpful" || category === "Commendation" || category === "Admin") {
+      return "good";
+    }
+
+    if (category === "Attendance" || category === "Attendance Note" || category === "Link-only") {
+      return "warn";
+    }
+
+    return "risk";
+  }
+
+  function renderAvatar(member) {
+    if (member.avatarPath) {
+      return `<img class="avatar" src="${escapeAttribute(member.avatarPath)}" alt="${escapeAttribute(
+        member.name
+      )}">`;
+    }
+
+    return `<div class="avatar-fallback">${escapeHtml(initialsFor(member.name))}</div>`;
+  }
+
+  function getMemberById(memberId) {
+    return dataset.members.find((member) => member.id === memberId) || null;
+  }
+
+  function emptyState(title, copy) {
+    return `
+      <div class="empty-state">
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(copy)}</p>
+      </div>
+    `;
+  }
+
+  function formatDate(isoValue, fallbackLabel = "") {
+    if (!isoValue) {
+      return fallbackLabel || "Unknown";
+    }
+
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) {
+      return fallbackLabel || "Unknown";
+    }
+
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  }
+
+  function withSign(value) {
+    const number = Number(value || 0);
+    return number > 0 ? "+" + number : String(number);
+  }
+
+  function toTime(value) {
+    if (!value) {
+      return 0;
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+
+  function clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, value));
+  }
+
+  function initialsFor(text) {
+    return String(text || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase();
+  }
+
+  function cryptoId() {
+    if (window.crypto?.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+
+    return "report-" + Date.now() + "-" + Math.floor(Math.random() * 100000);
+  }
+
+  function asList(value) {
+    if (Array.isArray(value)) {
+      return value.filter((item) => item !== null && item !== undefined && item !== "");
+    }
+
+    if (!value) {
+      return [];
+    }
+
+    if (typeof value === "object") {
+      return Object.values(value).filter((item) => item !== null && item !== undefined && item !== "");
+    }
+
+    return [value];
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replace(/`/g, "&#96;");
+  }
+})();

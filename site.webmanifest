@@ -1,16 +1,16 @@
 {
-  "name": "Prime Movers Filament Tracker",
-  "short_name": "Filament Flow",
-  "start_url": "./",
+  "name": "Team 31 Hub",
+  "short_name": "Team31Hub",
+  "description": "Mobile-friendly Team 31 control room for roster intel, receipts, reports, and future robotics modules.",
+  "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#09080d",
+  "theme_color": "#120f1a",
   "icons": [
     {
-      "src": "app-icon.png",
+      "src": "assets/app-icon.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
     }
   ]
 }
