@@ -160,7 +160,8 @@ const state = {
   scannerStream: null,
   scannerDetector: null,
   scannerLoopId: 0,
-  refreshInFlight: false
+  refreshInFlight: false,
+  pendingSheetWrites: {}
 };
 
 const els = {
@@ -361,18 +362,74 @@ function saveInventory() { try { localStorage.setItem(STORAGE_KEY, JSON.stringif
 function loadLocalComments() { try { return JSON.parse(localStorage.getItem(LOCAL_COMMENTS_KEY) || "[]"); } catch { return []; } }
 function saveLocalComments(comments) { try { localStorage.setItem(LOCAL_COMMENTS_KEY, JSON.stringify(comments)); } catch {} }
 function saveLocalReactions() { try { localStorage.setItem(LOCAL_REACTIONS_KEY, JSON.stringify(state.reactions)); } catch {} }
+function registerPendingSheetWrite(item) {
+  if (!item?.id) return;
+  state.pendingSheetWrites[item.id] = {
+    startedAt: Date.now(),
+    snapshot: {
+      amount: clampAmount(item.amount),
+      sealed: normalizeSealStatus(item.sealed),
+      location: item.location || "",
+      restock: item.restock || "Unknown",
+      notes: item.notes || "",
+      color: item.color || "",
+      material: item.material || "",
+      finish: item.finish || "",
+      brand: item.brand || ""
+    }
+  };
+}
+function clearPendingSheetWrite(id) {
+  if (!id) return;
+  delete state.pendingSheetWrites[id];
+}
+function getPendingSheetWrite(id) {
+  const pending = state.pendingSheetWrites[id];
+  if (!pending) return null;
+  if (Date.now() - Number(pending.startedAt || 0) > 15000) {
+    clearPendingSheetWrite(id);
+    return null;
+  }
+  return pending;
+}
+function sheetItemMatchesPending(sheetItem, pendingSnapshot) {
+  if (!sheetItem || !pendingSnapshot) return false;
+  return clampAmount(sheetItem.amount) === clampAmount(pendingSnapshot.amount)
+    && normalizeSealStatus(sheetItem.sealed) === normalizeSealStatus(pendingSnapshot.sealed)
+    && String(sheetItem.location || "") === String(pendingSnapshot.location || "")
+    && String(sheetItem.restock || "Unknown") === String(pendingSnapshot.restock || "Unknown")
+    && String(sheetItem.notes || "") === String(pendingSnapshot.notes || "");
+}
 function mergeInventoryWithSaved(sheetInventory) {
   if (!Array.isArray(sheetInventory) || !sheetInventory.length) return false;
   const saved = loadInventory();
   const merged = sheetInventory.map((item) => {
     const match = saved.find((savedItem) => normalizeTag(savedItem.id) === normalizeTag(item.id));
-    return match
+    const pending = getPendingSheetWrite(item.id);
+    const baseItem = match
       ? {
           ...item,
           reorderThreshold: match.reorderThreshold ?? item.reorderThreshold,
           position: match.position || item.position || ""
         }
       : item;
+    if (!pending) return baseItem;
+    if (sheetItemMatchesPending(baseItem, pending.snapshot)) {
+      clearPendingSheetWrite(item.id);
+      return baseItem;
+    }
+    return {
+      ...baseItem,
+      amount: pending.snapshot.amount,
+      sealed: pending.snapshot.sealed,
+      location: pending.snapshot.location,
+      restock: pending.snapshot.restock,
+      notes: pending.snapshot.notes,
+      color: pending.snapshot.color,
+      material: pending.snapshot.material,
+      finish: pending.snapshot.finish,
+      brand: pending.snapshot.brand
+    };
   });
   state.inventory = merged;
   saveInventory();
@@ -461,9 +518,14 @@ async function syncItemToGoogleSheet(item, mode = "upsert") {
 }
 
 async function syncItemAndRefresh(item, mode = "upsert") {
+  registerPendingSheetWrite(item);
   const synced = await syncItemToGoogleSheet(item, mode);
-  if (!synced) return false;
+  if (!synced) {
+    clearPendingSheetWrite(item?.id);
+    return false;
+  }
   const previousSelected = state.selectedId;
+  await new Promise((resolve) => window.setTimeout(resolve, 1200));
   const loaded = await loadInventoryFromGoogleSheet();
   if (loaded && previousSelected) state.selectedId = previousSelected;
   renderAll();
@@ -1106,6 +1168,7 @@ function renderAll() {
 
 async function refreshLiveData() {
   if (state.refreshInFlight) return false;
+  if (Object.keys(state.pendingSheetWrites).length) return false;
   state.refreshInFlight = true;
   try {
     const previousSelected = state.selectedId;
