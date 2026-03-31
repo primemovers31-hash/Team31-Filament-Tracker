@@ -94,6 +94,12 @@ button, input { font: inherit; }
 .site-lock-screen[hidden] {
   display: none !important;
 }
+[data-site-locked="off"] .site-lock-screen {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 .site-lock-card {
   width: min(460px, calc(100vw - 32px));
   padding: 30px;
