@@ -440,19 +440,12 @@ async function loadInventoryFromGoogleSheet() {
   if (!config.googleSheetCsvUrl && !config.googleSheetAppsScriptUrl) return false;
   try {
     if (config.googleSheetAppsScriptUrl) {
-      const readUrl = new URL(config.googleSheetAppsScriptUrl);
-      readUrl.searchParams.set("action", "read");
-      readUrl.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
-      readUrl.searchParams.set("_ts", String(Date.now()));
-      const scriptResponse = await fetch(readUrl.toString(), { cache: "no-store" });
-      if (scriptResponse.ok) {
-        const scriptData = await scriptResponse.json();
-        if (scriptData?.ok && Array.isArray(scriptData.rows) && scriptData.rows.length) {
-          const sheetInventory = buildInventoryFromSheetRows(scriptData.rows);
-          if (mergeInventoryWithSaved(sheetInventory)) {
-            state.dataSourceLabel = "Google Sheet live";
-            return true;
-          }
+      const scriptRows = await fetchSheetRowsFromAppsScript();
+      if (scriptRows?.length) {
+        const sheetInventory = buildInventoryFromSheetRows(scriptRows);
+        if (mergeInventoryWithSaved(sheetInventory)) {
+          state.dataSourceLabel = "Google Sheet live";
+          return true;
         }
       }
     }
@@ -468,6 +461,23 @@ async function loadInventoryFromGoogleSheet() {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function fetchSheetRowsFromAppsScript() {
+  if (!config.googleSheetAppsScriptUrl) return null;
+  try {
+    const readUrl = new URL(config.googleSheetAppsScriptUrl);
+    readUrl.searchParams.set("action", "read");
+    readUrl.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
+    readUrl.searchParams.set("_ts", String(Date.now()));
+    const scriptResponse = await fetch(readUrl.toString(), { cache: "no-store" });
+    if (!scriptResponse.ok) return null;
+    const scriptData = await scriptResponse.json();
+    if (!scriptData?.ok || !Array.isArray(scriptData.rows)) return null;
+    return scriptData.rows;
+  } catch {
+    return null;
   }
 }
 
@@ -492,11 +502,11 @@ function buildSheetPayload(item) {
   };
 }
 
-async function syncItemToGoogleSheet(item, mode = "upsert") {
+async function sendSheetUpsertRequest(item, mode = "upsert") {
   if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
+  const sheetPayload = buildSheetPayload(item);
   try {
     const url = new URL(config.googleSheetAppsScriptUrl);
-    const sheetPayload = buildSheetPayload(item);
     url.searchParams.set("action", mode);
     url.searchParams.set("secret", config.googleSheetSharedSecret || "");
     url.searchParams.set("sheetName", config.googleSheetName || "Sheet1");
@@ -504,24 +514,67 @@ async function syncItemToGoogleSheet(item, mode = "upsert") {
       url.searchParams.set(key, String(value ?? ""));
     });
     const response = await fetch(url.toString(), { cache: "no-store" });
-    if (!response.ok) return false;
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      return false;
+    if (response.ok) {
+      const payload = await response.json().catch(() => null);
+      if (payload?.ok) return true;
     }
+  } catch {}
+
+  try {
+    const response = await fetch(config.googleSheetAppsScriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: mode,
+        secret: config.googleSheetSharedSecret || "",
+        sheetName: config.googleSheetName || "Sheet1",
+        item: sheetPayload
+      })
+    });
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => null);
     return Boolean(payload?.ok);
   } catch {
     return false;
   }
 }
 
+async function verifySheetWrite(item, attempts = 4) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    }
+    const rows = await fetchSheetRowsFromAppsScript();
+    if (!rows?.length) continue;
+    const sheetItem = buildInventoryFromSheetRows(rows).find((entry) => normalizeTag(entry.id) === normalizeTag(item.id));
+    if (!sheetItem) continue;
+    if (
+      clampAmount(sheetItem.amount) === clampAmount(item.amount)
+      && normalizeSealStatus(sheetItem.sealed) === normalizeSealStatus(item.sealed)
+      && String(sheetItem.location || "") === String(item.location || "")
+      && String(sheetItem.restock || "Unknown") === String(item.restock || "Unknown")
+      && String(sheetItem.notes || "") === String(item.notes || "")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+  
+async function syncItemToGoogleSheet(item, mode = "upsert") {
+  if (!config.googleSheetAppsScriptUrl || !item?.id) return false;
+  const wrote = await sendSheetUpsertRequest(item, mode);
+  if (!wrote) return false;
+  return verifySheetWrite(item);
+}
+  
 async function syncItemAndRefresh(item, mode = "upsert") {
   registerPendingSheetWrite(item);
   const synced = await syncItemToGoogleSheet(item, mode);
   if (!synced) {
     clearPendingSheetWrite(item?.id);
+    await loadInventoryFromGoogleSheet();
+    renderAll();
     return false;
   }
   const previousSelected = state.selectedId;
