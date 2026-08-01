@@ -1,0 +1,48 @@
+﻿{
+    "sourceLog":  "C:\\Users\\Graham Pinnell\\AppData\\Roaming\\BambuStudio\\log\\debug_Sat_Mar_28_15_48_19_24140.log.0",
+    "generatedAt":  "2026-03-28T16:04:07.0199168-05:00",
+    "printers":  [
+                     {
+                         "deviceId":  "01P*********911",
+                         "capturedAt":  "2026-03-28T16:04:07.0099239-05:00",
+                         "amsPresent":  true,
+                         "amsSlots":  [
+                                          {
+                                              "slotId":  "A1",
+                                              "status":  "loaded",
+                                              "materialType":  "PETG",
+                                              "materialCode":  "GFG99",
+                                              "colorHex":  "#161616"
+                                          },
+                                          {
+                                              "slotId":  "A2",
+                                              "status":  "empty",
+                                              "materialType":  "",
+                                              "materialCode":  "",
+                                              "colorHex":  ""
+                                          },
+                                          {
+                                              "slotId":  "A3",
+                                              "status":  "loaded",
+                                              "materialType":  "PETG",
+                                              "materialCode":  "GFG99",
+                                              "colorHex":  "#161616"
+                                          },
+                                          {
+                                              "slotId":  "A4",
+                                              "status":  "loaded",
+                                              "materialType":  "PETG",
+                                              "materialCode":  "GFG99",
+                                              "colorHex":  "#161616"
+                                          }
+                                      ],
+                         "externalSpool":  {
+                                               "slotId":  "Ext",
+                                               "status":  "loaded",
+                                               "materialType":  "TPU",
+                                               "materialCode":  "GFU99",
+                                               "colorHex":  "#000000"
+                                           }
+                     }
+                 ]
+}

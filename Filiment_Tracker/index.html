@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prime Movers Ops Hub</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Ops Hub">
+  <link rel="icon" type="image/png" href="app-icon.png">
+  <link rel="apple-touch-icon" href="app-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("filament-flow-theme-v1");
+        var nextTheme = ["light", "dark", "team31"].includes(savedTheme) ? savedTheme : "light";
+        document.documentElement.setAttribute("data-theme", nextTheme);
+      } catch (error) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    }());
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="site-lock-screen" id="site-lock-screen" hidden>
+      <div class="site-lock-card">
+        <img class="site-lock-logo" src="team31-logo.png" alt="Team 31 logo">
+        <p class="eyebrow">FRC Team 31 Ops Hub</p>
+        <h2>Prime Movers Command</h2>
+        <p class="site-lock-copy">Enter the site access code to open the team hub.</p>
+        <form class="site-lock-form" id="site-lock-form">
+          <label for="site-lock-input">Access code</label>
+          <input id="site-lock-input" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter site code">
+          <button class="primary-button" type="submit">Unlock hub</button>
+        </form>
+        <p class="site-lock-status" id="site-lock-status">Locked</p>
+      </div>
+    </div>
+    <button class="ghost-button floating-home" id="home-button" type="button">Home</button>
+    <div class="app-shell">
+      <header class="hero">
+        <nav class="topbar">
+        <div class="topbar-brand">
+          <img class="team-logo" src="team31-logo.png" alt="Team 31 logo">
+          <div>
+          <p class="eyebrow">FRC Team 31 Ops Hub</p>
+          <h1>Prime Movers Command</h1>
+          </div>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="site-lock-button" type="button">Site locked</button>
+            <button class="ghost-button" id="station-mode-button" type="button">Station mode off</button>
+            <button class="ghost-button" id="tv-mode-button" type="button">TV mode off</button>
+            <button class="ghost-button" id="admin-mode-button" type="button">Admin locked</button>
+            <label class="theme-picker" for="theme-select">
+            <span>Theme</span>
+            <select id="theme-select">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="team31">Team 31</option>
+            </select>
+          </label>
+          <button class="ghost-button admin-only" id="reset-button" type="button">Reset Saved Changes</button>
+        </div>
+      </nav>
+      <div class="hero-links">
+        <a class="ghost-button action-link" id="spreadsheet-link" href="#" target="_blank" rel="noreferrer">Open Spreadsheet</a>
+        <a class="ghost-button action-link" href="#scanner-section">Open QR scanner</a>
+        <a class="ghost-button action-link" href="#team-hq-section">Open Team HQ</a>
+        <a class="ghost-button action-link" href="#team-report-mode">Open report mode</a>
+      </div>
+      <div class="hero-grid">
+        <section class="hero-copy">
+          <div class="hero-teamline">
+            <img class="team-logo hero-logo" src="team31-logo.png" alt="Team 31 logo">
+            <p class="hero-kicker">Jenks Prime Movers 31</p>
+          </div>
+          <h2>Run inventory, team intel, and point-powered chaos control from one command center.</h2>
+          <p class="hero-text">This hub now doubles as a Team 31 operations board: filament catalog, room roster, reputation scoreboards, report mode, rewards, consequences, and the beginnings of a robotics app that can grow beyond the shop.</p>
+          <div class="search-panel">
+            <label class="search-box" for="search-input">
+              <span>Search inventory</span>
+              <input id="search-input" type="search" placeholder="Try black PLA, Bambu, cabinet...">
+            </label>
+            <div class="search-suggestions" id="search-suggestions"></div>
+            <div class="stat-strip" id="stat-strip"></div>
+            <div class="home-dashboard">
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Reorder board</p>
+                    <h3>Lowest stock right now</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="low-stock-grid"></div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Printers live</p>
+                    <h3>Loaded on printers</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="printer-load-grid"></div>
+              </section>
+              <section class="home-block scanner-block" id="scanner-section">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Scan station</p>
+                    <h3>Scan a spool</h3>
+                  </div>
+                </div>
+                <p class="inventory-subline">Use the barcode scanner or camera, then hit a one-click action for the spool.</p>
+                <div class="station-scan-panel">
+                  <label class="search-box" for="station-scan-input">
+                    <span>Scanner input</span>
+                    <input id="station-scan-input" type="text" inputmode="search" autocomplete="off" placeholder="Scan or type a spool tag, barcode, or QR URL">
+                  </label>
+                  <div class="scanner-actions">
+                    <button class="primary-button" id="focus-scan-input-button" type="button">Focus scan field</button>
+                  </div>
+                  <p class="comments-status" id="station-scan-status">Ready for a USB barcode scanner or manual tag entry.</p>
+                </div>
+                <div class="scanner-actions">
+                  <button class="primary-button" id="start-scan-button" type="button">Start camera scanner</button>
+                  <label class="ghost-button upload-button" for="scan-upload-input">Scan from image</label>
+                  <input id="scan-upload-input" type="file" accept="image/*" capture="environment" hidden>
+                </div>
+                <p class="comments-status" id="scan-status">Ready to scan a spool tag or QR link.</p>
+                <div class="scanner-frame" id="scanner-frame" hidden>
+                  <video id="scanner-video" playsinline muted></video>
+                </div>
+                <div class="station-actions-panel" id="station-actions-panel">
+                  <div class="comments-head">
+                    <div>
+                      <p class="mini-label">Quick actions</p>
+                      <h3 id="station-selected-summary">Choose or scan a spool</h3>
+                    </div>
+                  </div>
+                  <div class="quick-action-grid">
+                    <button class="filter-pill" type="button" data-station-action="used-some">Used some</button>
+                    <button class="filter-pill" type="button" data-station-action="used-lot">Used a lot</button>
+                    <button class="filter-pill" type="button" data-station-action="mark-low">Mark low</button>
+                    <button class="filter-pill" type="button" data-station-action="mark-empty">Mark empty</button>
+                    <button class="filter-pill" type="button" data-station-action="return-shelf">Return to shelf</button>
+                  </div>
+                  <div class="station-printer-shortcuts" id="printer-shortcut-grid"></div>
+                </div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Reorder queue</p>
+                    <h3>Needs restock</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="reorder-queue-grid"></div>
+              </section>
+              <section class="home-block">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <p class="eyebrow">Printer cleanup</p>
+                    <h3>Return spool(s)?</h3>
+                  </div>
+                </div>
+                <div class="home-row-grid" id="return-prompt-grid"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+        <section class="featured-card" id="featured-card">
+          <img class="team-logo featured-logo" src="team31-logo.png" alt="Team 31 logo">
+          <p class="featured-label">Spotlight spool</p>
+          <div class="featured-art" id="featured-swatch"></div>
+          <div>
+            <h3 id="featured-name"></h3>
+            <p id="featured-meta"></p>
+          </div>
+          <div class="featured-footer">
+            <div>
+              <span>Ready now</span>
+              <strong id="featured-amount"></strong>
+            </div>
+            <button class="primary-button" id="jump-featured" type="button">Open details</button>
+          </div>
+        </section>
+      </div>
+    </header>
+    <main class="dashboard">
+      <section class="catalog-panel">
+        <div class="bambu-panel">
+          <div class="section-heading">
+            <div class="section-heading-brand">
+              <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+              <div>
+              <p class="eyebrow">Bambu companion</p>
+              <h2>P1S printer status</h2>
+              </div>
+            </div>
+          </div>
+          <div class="printer-grid" id="printer-grid"></div>
+        </div>
+        <div class="match-panel">
+          <div class="section-heading">
+            <div class="section-heading-brand">
+              <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+              <div>
+              <p class="eyebrow">Printer picks</p>
+              <h2>Best matches for current printer</h2>
+              </div>
+            </div>
+          </div>
+          <div class="match-grid" id="match-grid"></div>
+        </div>
+        <div class="section-heading">
+          <div class="section-heading-brand">
+            <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+            <div>
+            <p class="eyebrow">Team 31 inventory</p>
+            <h2>Filament catalog</h2>
+            </div>
+          </div>
+          <div class="catalog-actions">
+            <p id="results-copy"></p>
+            <button class="primary-button admin-only" id="add-filament-button" type="button">Add filament</button>
+          </div>
+        </div>
+        <div class="filter-row compact" id="mode-filters"></div>
+        <div class="filter-row compact" id="family-filters"></div>
+        <div class="filter-row" id="material-filters"></div>
+        <div class="filter-row compact" id="location-filters"></div>
+        <div class="inventory-grid" id="inventory-grid"></div>
+      </section>
+      <aside class="detail-panel" id="detail-panel">
+        <p class="eyebrow">Selected spool</p>
+        <div class="detail-hero">
+          <div class="detail-art" id="detail-swatch"></div>
+          <div>
+            <h2 id="detail-title">Choose a filament</h2>
+            <p id="detail-subtitle">Click any spool card to inspect it here.</p>
+          </div>
+        </div>
+        <div class="amount-module">
+          <div>
+            <span class="mini-label">Amount remaining</span>
+            <strong id="detail-amount">0.0</strong>
+          </div>
+          <div class="stepper">
+            <button class="stepper-button" id="decrease-button" type="button" aria-label="Decrease amount">-</button>
+            <button class="stepper-button" id="increase-button" type="button" aria-label="Increase amount">+</button>
+          </div>
+        </div>
+        <div class="progress-shell">
+          <div class="progress-bar"><span id="detail-progress"></span></div>
+          <p id="detail-status"></p>
+        </div>
+          <div class="detail-actions">
+            <a class="primary-button action-link" id="amazon-link" href="#" target="_blank" rel="noreferrer">Order on Amazon</a>
+            <a class="ghost-button action-link" id="qr-download-link" href="#" target="_blank" rel="noreferrer">Open QR</a>
+            <button class="ghost-button admin-only" id="delete-filament-button" type="button">Remove filament</button>
+          </div>
+          <section class="printer-assignment-card">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">QR label</p>
+                <h3>Scan this spool</h3>
+              </div>
+              <p class="comments-status" id="qr-tag-copy">Tag</p>
+            </div>
+            <div class="qr-card">
+              <img class="qr-preview" id="qr-preview" alt="Filament QR code">
+              <div class="qr-copy-group">
+                <p class="inventory-subline" id="qr-link-copy">Open this spool directly from a phone camera or from inside the tracker scanner.</p>
+                <div class="qr-actions">
+                  <button class="ghost-button" id="copy-spool-link-button" type="button">Copy spool link</button>
+                  <a class="primary-button action-link" id="download-qr-button" href="#" target="_blank" rel="noreferrer">Download QR</a>
+                </div>
+              </div>
+            </div>
+          </section>
+          <dl class="detail-list" id="detail-list"></dl>
+        <section class="printer-assignment-card">
+          <p class="mini-label">Bambu auto sync</p>
+          <h3 id="bambu-sync-title">Automatic printer reading not connected</h3>
+          <p class="inventory-subline" id="bambu-sync-copy">The current Bambu files you shared look like printer/profile bundles, not live AMS slot data. Once we have a real printer data source, this section can switch to automatic status.</p>
+          <p class="comments-status" id="bambu-sync-meta"></p>
+        </section>
+        <section class="note-card">
+          <p class="mini-label">Notes</p>
+          <p id="detail-notes">No notes for this spool yet.</p>
+        </section>
+        <section class="printer-assignment-card admin-only">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Location manager</p>
+              <h3>Move this spool</h3>
+            </div>
+            <p class="comments-status" id="location-bucket">On shelf</p>
+          </div>
+          <div class="location-quick-actions">
+            <button class="filter-pill" id="move-to-printer" type="button">Move to printer</button>
+            <button class="filter-pill" id="move-to-shelf" type="button">Move to shelf</button>
+          </div>
+          <form class="comment-form" id="location-form">
+            <label>
+              <span>Exact location</span>
+              <select id="location-select"></select>
+            </label>
+            <label>
+              <span>Position</span>
+              <input id="position-input" type="text" maxlength="60" placeholder="Shelf A3, AMS A1, top row...">
+            </label>
+            <button class="primary-button" type="submit">Save location</button>
+          </form>
+        </section>
+        <section class="printer-assignment-card admin-only">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Reorder settings</p>
+              <h3>Threshold and reactions</h3>
+            </div>
+          </div>
+          <form class="comment-form" id="threshold-form">
+            <label>
+              <span>Reorder threshold</span>
+              <input id="threshold-input" type="number" min="0" max="5" step="0.1" value="0.3">
+            </label>
+            <button class="primary-button" type="submit">Save threshold</button>
+          </form>
+          <div class="reaction-row">
+            <button class="reaction-button" id="like-button" type="button">Heart <span id="like-count">0</span></button>
+            <button class="reaction-button" id="favorite-button" type="button">Favorite <span id="favorite-count">0</span></button>
+          </div>
+        </section>
+        <section class="printer-assignment-card admin-only">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Seal status</p>
+              <h3>Bag or open status</h3>
+            </div>
+          </div>
+          <form class="comment-form" id="seal-form">
+            <label>
+              <span>Spreadsheet seal value</span>
+              <select id="seal-select"></select>
+            </label>
+            <button class="primary-button" type="submit">Save seal status</button>
+          </form>
+        </section>
+        <section class="comments-card">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Shared comments</p>
+              <h3>Team notes</h3>
+            </div>
+            <p class="comments-status" id="comments-status">Local-only mode</p>
+          </div>
+          <div class="quick-comment-row" id="quick-comment-row">
+            <button class="filter-pill" type="button" data-quick-comment="Prints great">Prints great</button>
+            <button class="filter-pill" type="button" data-quick-comment="Low stock">Low stock</button>
+            <button class="filter-pill" type="button" data-quick-comment="Needs drying">Needs drying</button>
+            <button class="filter-pill" type="button" data-quick-comment="Good for prototypes">Good for prototypes</button>
+          </div>
+          <form class="comment-form" id="comment-form">
+            <label>
+              <span>Name (optional)</span>
+              <input id="comment-name" type="text" maxlength="40" placeholder="Leave blank for Anonymous">
+            </label>
+            <label>
+              <span>Comment</span>
+              <textarea id="comment-text" rows="4" maxlength="500" placeholder="Add a note about print quality, storage, or reorder ideas..."></textarea>
+            </label>
+            <button class="primary-button" type="submit">Post comment</button>
+          </form>
+          <div class="comment-list" id="comment-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <section class="team-hq-shell" id="team-hq-section">
+      <div class="section-heading team-hq-heading">
+        <div class="section-heading-brand">
+          <img class="section-logo" src="team31-logo.png" alt="Team 31 logo">
+          <div>
+            <p class="eyebrow">Team 31 HQ</p>
+            <h2>Reputation board, dossiers, and report mode</h2>
+          </div>
+        </div>
+        <div class="catalog-actions team-hq-actions">
+          <p class="inventory-subline" id="team-hq-copy">Starter scores are playful placeholders until real chat receipts and logs are wired in.</p>
+          <button class="ghost-button" id="copy-discord-id-button" type="button">Copy Discord HQ ID</button>
+        </div>
+      </div>
+
+      <div class="team-hq-command">
+        <section class="hq-panel hq-panel-wide">
+          <div class="hq-hero-strip">
+            <div class="hq-kpi-grid" id="team-kpi-grid"></div>
+            <div class="hq-filter-shell">
+              <div class="hq-filter-row" id="team-room-filters"></div>
+              <div class="hq-filter-row" id="team-conduct-filters"></div>
+            </div>
+          </div>
+
+          <div class="hq-upper-grid">
+            <section class="hq-subpanel">
+              <div class="comments-head">
+                <div>
+                  <p class="mini-label">Leaderboard</p>
+                  <h3>Top agents this week</h3>
+                </div>
+                <p class="comments-status" id="team-leaderboard-copy">Competition fuel and bragging rights.</p>
+              </div>
+              <div class="hq-ranking-list" id="team-leaderboard"></div>
+            </section>
+
+            <section class="hq-subpanel">
+              <div class="comments-head">
+                <div>
+                  <p class="mini-label">Room watch</p>
+                  <h3>Classroom heat map</h3>
+                </div>
+                <p class="comments-status">Tap a room filter to isolate that crew.</p>
+              </div>
+              <div class="hq-room-grid" id="team-room-grid"></div>
+            </section>
+          </div>
+
+          <section class="hq-subpanel">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">Agent roster</p>
+                <h3>All accounts</h3>
+              </div>
+              <p class="comments-status" id="team-grid-copy">Click any member to open the dossier.</p>
+            </div>
+            <div class="hq-member-grid" id="team-member-grid"></div>
+          </section>
+        </section>
+
+        <aside class="team-dossier-panel" id="team-dossier-panel">
+          <p class="eyebrow">Agent dossier</p>
+          <div class="hq-dossier-hero">
+            <div class="hq-agent-badge" id="team-selected-badge">PM</div>
+            <div>
+              <h3 id="team-selected-name">Choose an agent</h3>
+              <p class="inventory-subline" id="team-selected-codename">Select a roster card to inspect score, room, and recent reports.</p>
+            </div>
+          </div>
+
+          <div class="hq-score-panel">
+            <div class="hq-score-head">
+              <div>
+                <span class="mini-label">Reputation index</span>
+                <strong id="team-selected-score">000</strong>
+              </div>
+              <span class="badge" id="team-selected-clearance">Standby</span>
+            </div>
+            <div class="hq-score-meter">
+              <span id="team-selected-meter"></span>
+            </div>
+            <p class="inventory-subline" id="team-selected-status">Starter sandbox is waiting for a selection.</p>
+          </div>
+
+          <div class="hq-tag-grid" id="team-selected-tags"></div>
+
+          <section class="hq-subpanel">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">Quick rulings</p>
+                <h3>Reward or penalize instantly</h3>
+              </div>
+            </div>
+            <div class="hq-action-grid">
+              <button class="filter-pill" type="button" data-agent-adjust="18" data-agent-reason="Helped a teammate without being asked">Helped a teammate +18</button>
+              <button class="filter-pill" type="button" data-agent-adjust="28" data-agent-reason="Carried cleanup or pit setup">Carried cleanup +28</button>
+              <button class="filter-pill" type="button" data-agent-adjust="42" data-agent-reason="Saved a match-day disaster">Saved match day +42</button>
+              <button class="filter-pill" type="button" data-agent-adjust="-12" data-agent-reason="Vanished during cleanup">Vanished at cleanup -12</button>
+              <button class="filter-pill" type="button" data-agent-adjust="-24" data-agent-reason="Generated avoidable chaos">Generated chaos -24</button>
+              <button class="filter-pill" type="button" data-agent-adjust="-40" data-agent-reason="Major goof requiring mentor intervention">Major goof -40</button>
+            </div>
+          </section>
+
+          <section class="hq-subpanel">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">Recent paper trail</p>
+                <h3>Timeline</h3>
+              </div>
+              <p class="comments-status">Newest events first.</p>
+            </div>
+            <div class="hq-history-list" id="team-history-list"></div>
+          </section>
+
+          <section class="hq-subpanel">
+            <div class="comments-head">
+              <div>
+                <p class="mini-label">Reward track</p>
+                <h3>Perks and consequences</h3>
+              </div>
+            </div>
+            <div class="hq-incentive-board" id="team-incentive-board"></div>
+          </section>
+        </aside>
+      </div>
+
+      <div class="team-hq-lower-grid">
+        <section class="hq-subpanel" id="team-report-mode">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Report mode</p>
+              <h3>File an incident, commendation, or comedy charge</h3>
+            </div>
+            <p class="comments-status" id="team-report-status">Local-only mode. Nothing leaves this browser.</p>
+          </div>
+          <form class="comment-form hq-report-form" id="team-report-form">
+            <label>
+              <span>Target agent</span>
+              <select id="team-report-target"></select>
+            </label>
+            <label>
+              <span>Filed by</span>
+              <input id="team-report-reporter" type="text" maxlength="48" placeholder="Mentor, anonymous witness, pit goblin...">
+            </label>
+            <label>
+              <span>Report type</span>
+              <select id="team-report-type">
+                <option value="commendation">Commendation</option>
+                <option value="concern">Concern</option>
+                <option value="chaos">Chaos report</option>
+                <option value="legend">Legendary moment</option>
+              </select>
+            </label>
+            <label>
+              <span>Point swing</span>
+              <select id="team-report-delta">
+                <option value="18">+18</option>
+                <option value="32">+32</option>
+                <option value="-12">-12</option>
+                <option value="-28">-28</option>
+                <option value="-45">-45</option>
+              </select>
+            </label>
+            <label class="full-span">
+              <span>Summary</span>
+              <textarea id="team-report-summary" rows="4" maxlength="280" placeholder="Explain what happened, why it mattered, and how funny it was..."></textarea>
+            </label>
+            <button class="primary-button" type="submit">Submit report</button>
+          </form>
+        </section>
+
+        <section class="hq-subpanel">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Live feed</p>
+              <h3>Recent reports</h3>
+            </div>
+            <p class="comments-status">Most recent incidents and hero moments.</p>
+          </div>
+          <div class="hq-feed-list" id="team-report-feed"></div>
+        </section>
+
+        <section class="hq-subpanel">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Prize ladder</p>
+              <h3>What good behavior unlocks</h3>
+            </div>
+            <p class="comments-status">Lean into competition without turning it into actual doom.</p>
+          </div>
+          <div class="hq-reward-grid" id="team-reward-grid"></div>
+        </section>
+
+        <section class="hq-subpanel">
+          <div class="comments-head">
+            <div>
+              <p class="mini-label">Future modules</p>
+              <h3>The robotics hub every FRC team wants</h3>
+            </div>
+            <p class="comments-status">Expansion ideas beyond HR and filament.</p>
+          </div>
+          <div class="hq-module-grid" id="team-module-grid"></div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <section class="tv-board" id="tv-board" hidden>
+    <div class="tv-header">
+      <div>
+        <p class="eyebrow">Shop TV mode</p>
+        <h2>Prime Movers live board</h2>
+      </div>
+      <div class="tv-header-actions">
+        <p class="inventory-subline">Large-screen view for printers, low stock, and best matches.</p>
+        <button class="ghost-button" id="tv-exit-button" type="button">Exit TV mode</button>
+      </div>
+    </div>
+    <div class="tv-grid">
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Printers live</p>
+            <h3>P1S printer status</h3>
+          </div>
+        </div>
+        <div class="printer-grid tv-printer-grid" id="tv-printer-grid"></div>
+      </section>
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Reorder board</p>
+            <h3>Lowest stock right now</h3>
+          </div>
+        </div>
+        <div class="home-row-grid tv-home-grid" id="tv-low-stock-grid"></div>
+      </section>
+      <section class="home-block">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">Printer picks</p>
+            <h3>Best matches for current printer</h3>
+          </div>
+        </div>
+        <div class="match-grid tv-match-grid" id="tv-match-grid"></div>
+      </section>
+    </div>
+  </section>
+
+  <dialog class="modal" id="add-filament-modal">
+    <form class="modal-card" id="add-filament-form" method="dialog">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Create spool</p>
+          <h2>Add filament</h2>
+        </div>
+        <button class="ghost-button" id="close-add-filament" type="button">Close</button>
+      </div>
+      <div class="modal-grid">
+        <label><span>Tag</span><input id="new-tag" type="text" required placeholder="57.0"></label>
+        <label><span>Material</span><input id="new-material" type="text" required placeholder="PLA"></label>
+        <label><span>Finish</span><input id="new-finish" type="text" required placeholder="Silk"></label>
+        <label><span>Brand</span><input id="new-brand" type="text" required placeholder="Bambu"></label>
+        <label><span>Color</span><input id="new-color" type="text" required placeholder="Blue"></label>
+        <label><span>Amount</span><input id="new-amount" type="number" min="0" max="5" step="0.1" required value="1.0"></label>
+        <label><span>Reorder threshold</span><input id="new-threshold" type="number" min="0" max="5" step="0.1" value="0.3"></label>
+        <label><span>Storage</span><input id="new-location" type="text" required placeholder="Cabinet 2 PLA"></label>
+        <label><span>Position</span><input id="new-position" type="text" placeholder="Shelf A3"></label>
+        <label><span>Seal status</span><select id="new-sealed"></select></label>
+        <label><span>Order again</span><input id="new-restock" type="text" placeholder="Unknown"></label>
+        <label class="full-span"><span>Notes</span><textarea id="new-notes" rows="4" placeholder="Optional notes..."></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="primary-button" type="submit">Save filament</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="inventory.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
