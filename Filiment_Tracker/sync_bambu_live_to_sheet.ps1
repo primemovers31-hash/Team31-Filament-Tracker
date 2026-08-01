@@ -154,6 +154,10 @@ foreach ($printer in @($snapshot.printers)) {
     }
 }
 
+if ($rows.Count -eq 0) {
+    throw "No Bambu printer rows were found in the current Studio log. Open Bambu Studio, go to the Device page, load the printers and AMS view, then run this script again."
+}
+
 $payload = [pscustomobject]@{
     action = "replaceRows"
     secret = $SharedSecret
