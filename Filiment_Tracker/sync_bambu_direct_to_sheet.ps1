@@ -184,10 +184,27 @@ function Send-MqttSubscribe {
     $body = $packetIdBytes + (Encode-MqttString -Value $Topic) + [byte[]]@(0x00)
     Write-MqttPacket -Stream $Stream -TypeFlags 0x82 -Body $body
 
-    $response = Read-MqttPacket -Stream $Stream
-    if ($null -eq $response -or $response.Type -ne 9) {
-        throw "MQTT subscribe failed: missing SUBACK."
+    $deadline = (Get-Date).AddSeconds(5)
+    $packetTypesSeen = @()
+    while ((Get-Date) -lt $deadline) {
+        $response = Read-MqttPacket -Stream $Stream
+        if ($null -eq $response) {
+            break
+        }
+        $packetTypesSeen += $response.Type
+        if ($response.Type -eq 9) {
+            return
+        }
+        if ($response.Type -eq 13) {
+            continue
+        }
+        if ($response.Type -eq 3) {
+            continue
+        }
     }
+
+    $seenText = if ($packetTypesSeen.Count) { ($packetTypesSeen -join ", ") } else { "none" }
+    throw "MQTT subscribe failed: missing SUBACK. Packet types seen while waiting: $seenText"
 }
 
 function Send-MqttPublish {
