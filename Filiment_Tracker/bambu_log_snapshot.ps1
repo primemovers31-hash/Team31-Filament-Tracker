@@ -15,7 +15,9 @@ function Get-LatestDebugLog {
 
     $patterns = @(
         'debug_*.log.0',
-        'studio_*.log.0'
+        'debug_*.log.1',
+        'studio_*.log.0',
+        'studio_*.log.1'
     )
 
     $candidates = @()
@@ -83,6 +85,21 @@ function Get-LatestMachinePayloads {
 
     foreach ($line in $lines) {
         if ($line -match 'parse_json: dev_id=([^,]+), print playload=\{') {
+            $currentDevice = $matches[1]
+            if (-not $devices.ContainsKey($currentDevice)) {
+                $devices[$currentDevice] = @{
+                    deviceId = $currentDevice
+                    capturedAt = Get-Date -Format o
+                    slots = @{}
+                    externalSpool = $null
+                }
+            } else {
+                $devices[$currentDevice].capturedAt = Get-Date -Format o
+            }
+            continue
+        }
+
+        if ($line -match 'set_selected_machine:.*dev_id\s*=\s*([A-Za-z0-9]+)') {
             $currentDevice = $matches[1]
             if (-not $devices.ContainsKey($currentDevice)) {
                 $devices[$currentDevice] = @{
