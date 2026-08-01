@@ -4,7 +4,7 @@ window.APP_CONFIG = {
   googleSheetCsvUrl: "https://docs.google.com/spreadsheets/d/1t-iFSpfAp_ZCvsw62VQI-7thumBxM93KBD-5O0v4KNU/export?format=csv&gid=0",
   googleSheetWebUrl: "https://docs.google.com/spreadsheets/d/1t-iFSpfAp_ZCvsw62VQI-7thumBxM93KBD-5O0v4KNU/edit?usp=sharing",
   googleSheetName: "Sheet1",
-  googleSheetAppsScriptUrl: "https://script.google.com/macros/s/AKfycbyhiQst1O8SY6T6VWqV-tlwPleKCLtJpq6hmY7wKS-ut-G7r8PmYE9SSyRKRytn_rhP6w/exec",
+  googleSheetAppsScriptUrl: "https://script.google.com/macros/s/AKfycbw3RntVG0DodoECyYMfy9OpuWh9tMMXTu0v8tMS2uuMiP6Cb0pQZAzMYIL0o_n5_cDq1g/exec",
   googleSheetSharedSecret: "Mango_bird",
   googleSheetRefreshMs: 5000,
   bambuSheetName: "BambuLive",

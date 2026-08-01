@@ -1,5 +1,5 @@
 param(
-    [string]$AppsScriptUrl = "https://script.google.com/macros/s/AKfycbyhiQst1O8SY6T6VWqV-tlwPleKCLtJpq6hmY7wKS-ut-G7r8PmYE9SSyRKRytn_rhP6w/exec",
+    [string]$AppsScriptUrl = "https://script.google.com/macros/s/AKfycbw3RntVG0DodoECyYMfy9OpuWh9tMMXTu0v8tMS2uuMiP6Cb0pQZAzMYIL0o_n5_cDq1g/exec",
     [string]$SharedSecret = "Mango_bird",
     [string]$SheetName = "BambuLive",
     [string]$BambuRoot = "$env:APPDATA\BambuStudio"

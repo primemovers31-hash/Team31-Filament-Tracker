@@ -13,12 +13,22 @@ function Get-LatestDebugLog {
         throw "Bambu Studio log folder not found: $logDir"
     }
 
-    $log = Get-ChildItem $logDir -Filter 'debug_*.log.0' |
+    $patterns = @(
+        'debug_*.log.0',
+        'studio_*.log.0'
+    )
+
+    $candidates = @()
+    foreach ($pattern in $patterns) {
+        $candidates += @(Get-ChildItem $logDir -Filter $pattern -ErrorAction SilentlyContinue)
+    }
+
+    $log = $candidates |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 
     if (-not $log) {
-        throw "No Bambu Studio debug log found in $logDir"
+        throw "No Bambu Studio log found in $logDir"
     }
 
     return $log
