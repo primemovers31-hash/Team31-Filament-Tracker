@@ -1,47 +1,47 @@
 ﻿{
-    "sourceLog":  "C:\\Users\\Graham Pinnell\\AppData\\Roaming\\BambuStudio\\log\\debug_Sat_Mar_28_15_48_19_24140.log.0",
-    "generatedAt":  "2026-03-28T16:04:07.0199168-05:00",
+    "sourceLog":  "C:\\Users\\Graham Pinnell\\AppData\\Roaming\\BambuStudio\\log\\debug_Sat_Aug_01_11_33_25_11408.log.0",
+    "generatedAt":  "2026-08-01T12:58:57.4834050-05:00",
     "printers":  [
                      {
-                         "deviceId":  "01P*********911",
-                         "capturedAt":  "2026-03-28T16:04:07.0099239-05:00",
+                         "deviceId":  "01P*********448",
+                         "capturedAt":  "2026-08-01T12:58:57.4724030-05:00",
                          "amsPresent":  true,
                          "amsSlots":  [
                                           {
                                               "slotId":  "A1",
                                               "status":  "loaded",
-                                              "materialType":  "PETG",
-                                              "materialCode":  "GFG99",
-                                              "colorHex":  "#161616"
+                                              "materialType":  "PLA",
+                                              "materialCode":  "GFL99",
+                                              "colorHex":  "#000000"
                                           },
                                           {
                                               "slotId":  "A2",
-                                              "status":  "empty",
-                                              "materialType":  "",
-                                              "materialCode":  "",
-                                              "colorHex":  ""
+                                              "status":  "loaded",
+                                              "materialType":  "PETG",
+                                              "materialCode":  "GFG02",
+                                              "colorHex":  "#000000"
                                           },
                                           {
                                               "slotId":  "A3",
                                               "status":  "loaded",
                                               "materialType":  "PETG",
                                               "materialCode":  "GFG99",
-                                              "colorHex":  "#161616"
+                                              "colorHex":  "#FFFFFF"
                                           },
                                           {
                                               "slotId":  "A4",
-                                              "status":  "loaded",
-                                              "materialType":  "PETG",
-                                              "materialCode":  "GFG99",
-                                              "colorHex":  "#161616"
+                                              "status":  "empty",
+                                              "materialType":  "",
+                                              "materialCode":  "",
+                                              "colorHex":  ""
                                           }
                                       ],
                          "externalSpool":  {
                                                "slotId":  "Ext",
                                                "status":  "loaded",
-                                               "materialType":  "TPU",
-                                               "materialCode":  "GFU99",
-                                               "colorHex":  "#000000"
+                                               "materialType":  "PLA",
+                                               "materialCode":  "GFL96",
+                                               "colorHex":  "#F330F9"
                                            }
                      }
                  ]

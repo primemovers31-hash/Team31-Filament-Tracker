@@ -104,7 +104,7 @@ if (-not (Test-Path $snapshotPath)) {
 }
 
 $snapshot = Get-Content -Path $snapshotPath -Raw | ConvertFrom-Json
-$rows = New-Object System.Collections.Generic.List[object]
+$rows = @()
 $headers = @("DeviceId", "PrinterName", "CapturedAt", "Slot", "Status", "MaterialType", "MaterialCode", "ColorHex", "Source")
 $source = "Bambu Studio log"
 if ($null -ne $snapshot.sourceLog -and -not [string]::IsNullOrWhiteSpace([string]$snapshot.sourceLog)) {
@@ -141,25 +141,25 @@ foreach ($printer in @($snapshot.printers)) {
 
     foreach ($slotId in @("A1", "A2", "A3", "A4")) {
         if ($slotMap.ContainsKey($slotId)) {
-            $rows.Add((New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot $slotId -SlotData $slotMap[$slotId] -Source $source))
+            $rows += ,(New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot $slotId -SlotData $slotMap[$slotId] -Source $source)
         } else {
-            $rows.Add((New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot $slotId -SlotData @{ status = "empty"; materialType = ""; materialCode = ""; colorHex = "" } -Source $source))
+            $rows += ,(New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot $slotId -SlotData @{ status = "empty"; materialType = ""; materialCode = ""; colorHex = "" } -Source $source)
         }
     }
 
     if ($printer.externalSpool) {
-        $rows.Add((New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot "Ext" -SlotData $printer.externalSpool -Source $source))
+        $rows += ,(New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot "Ext" -SlotData $printer.externalSpool -Source $source)
     } else {
-        $rows.Add((New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot "Ext" -SlotData @{ status = "empty"; materialType = ""; materialCode = ""; colorHex = "" } -Source $source))
+        $rows += ,(New-BambuRow -DeviceId $deviceId -PrinterName $printerName -CapturedAt $capturedAt -Slot "Ext" -SlotData @{ status = "empty"; materialType = ""; materialCode = ""; colorHex = "" } -Source $source)
     }
 }
 
-$payload = @{
+$payload = [pscustomobject]@{
     action = "replaceRows"
     secret = $SharedSecret
     sheetName = $SheetName
     headers = $headers
-    rows = @($rows)
+    rows = $rows
 } | ConvertTo-Json -Depth 8
 
 $response = Invoke-RestMethod -Uri $AppsScriptUrl -Method Post -ContentType "application/json" -Body $payload
