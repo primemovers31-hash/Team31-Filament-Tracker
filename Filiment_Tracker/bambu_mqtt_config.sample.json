@@ -1,0 +1,16 @@
+{
+  "printers": [
+    {
+      "name": "JenksRobotics1",
+      "ip": "10.113.168.13",
+      "serial": "01P00C582602448",
+      "accessCode": "PASTE_ACCESS_CODE_HERE"
+    },
+    {
+      "name": "JenksRobotics2",
+      "ip": "10.113.160.45",
+      "serial": "01P00C591201911",
+      "accessCode": "PASTE_ACCESS_CODE_HERE"
+    }
+  ]
+}

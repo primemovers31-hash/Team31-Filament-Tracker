@@ -155,6 +155,15 @@ foreach ($printer in @($snapshot.printers)) {
 }
 
 if ($rows.Count -eq 0) {
+    $sourceIsEncrypted = $false
+    if ($null -ne $snapshot.sourceLogEncrypted) {
+        $sourceIsEncrypted = [bool]$snapshot.sourceLogEncrypted
+    }
+
+    if ($sourceIsEncrypted) {
+        throw "No Bambu printer rows were found because this Bambu Studio build is writing encrypted Studio logs on this PC. Switch to a direct printer connection method (LAN/Developer mode with printer access codes) instead of the log parser on this machine."
+    }
+
     throw "No Bambu printer rows were found in the current Studio log. Open Bambu Studio, go to the Device page, load the printers and AMS view, then run this script again."
 }
 

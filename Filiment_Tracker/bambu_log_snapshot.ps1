@@ -155,9 +155,10 @@ $latestLog = Get-LatestDebugLog -Root $BambuRoot
 $snapshots = @(Get-LatestMachinePayloads -LogPath $latestLog.FullName)
 
 $output = [pscustomobject]@{
-    sourceLog   = $latestLog.FullName
-    generatedAt = Get-Date -Format o
-    printers    = $snapshots
+    sourceLog          = $latestLog.FullName
+    sourceLogEncrypted = ($latestLog.Name -like '*_enc.log.*')
+    generatedAt        = Get-Date -Format o
+    printers           = $snapshots
 }
 
 $json = $output | ConvertTo-Json -Depth 100
